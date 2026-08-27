@@ -1,0 +1,357 @@
+<title>LaunchPad X</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg-deep: #0b0e17;
+    --bg-panel: #12172a;
+    --bg-panel-2: #171d35;
+    --line: #262e4c;
+    --text-hi: #eef1fb;
+    --text-body: #b9c0da;
+    --text-mute: #7680a3;
+    --spark: #7fd8ff;
+    --spark-dim: #4a90b8;
+    --ember: #ff9c52;
+    --ember-dim: #b8703a;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      --bg-deep: #f3f2ec;
+      --bg-panel: #ffffff;
+      --bg-panel-2: #ebe9e0;
+      --line: #dad7c8;
+      --text-hi: #16181f;
+      --text-body: #3c4152;
+      --text-mute: #6c7288;
+      --spark: #1c7fa8;
+      --spark-dim: #7fd8ff;
+      --ember: #c2620f;
+      --ember-dim: #ff9c52;
+    }
+  }
+  :root[data-theme="light"] {
+    --bg-deep: #f3f2ec;
+    --bg-panel: #ffffff;
+    --bg-panel-2: #ebe9e0;
+    --line: #dad7c8;
+    --text-hi: #16181f;
+    --text-body: #3c4152;
+    --text-mute: #6c7288;
+    --spark: #1c7fa8;
+    --spark-dim: #7fd8ff;
+    --ember: #c2620f;
+    --ember-dim: #ff9c52;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg-deep);
+    color: var(--text-body);
+    font-family: "IBM Plex Sans", system-ui, sans-serif;
+    line-height: 1.6;
+  }
+  h1, h2, h3 { font-family: "Chakra Petch", "IBM Plex Sans", sans-serif; color: var(--text-hi); text-wrap: balance; margin: 0; }
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+  .page { max-width: 920px; margin: 0 auto; padding: 0 28px 96px; }
+
+  /* ---------- hero ---------- */
+  .hero {
+    position: relative;
+    overflow: hidden;
+    margin: 0 -28px 64px;
+    padding: 72px 28px 56px;
+    background:
+      radial-gradient(120% 90% at 82% -10%, color-mix(in srgb, var(--spark) 20%, transparent), transparent 60%),
+      var(--bg-deep);
+    border-bottom: 1px solid var(--line);
+  }
+  #starfield { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0.9; }
+  .hero-inner { position: relative; max-width: 920px; margin: 0 auto; }
+
+  .eyebrow {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--spark);
+    margin-bottom: 22px;
+  }
+  .eyebrow .dot { width: 6px; height: 6px; background: var(--ember); clip-path: polygon(50% 0,100% 50%,50% 100%,0 50%); }
+
+  .hero h1 {
+    font-size: clamp(42px, 7vw, 68px);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.02;
+  }
+  .hero h1 span { color: var(--spark); }
+  .hero-sub {
+    max-width: 54ch;
+    margin-top: 20px;
+    font-size: 18px;
+    color: var(--text-body);
+  }
+  .hero-credit {
+    margin-top: 28px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 13px;
+    color: var(--text-mute);
+    letter-spacing: 0.04em;
+  }
+  .hero-credit b { color: var(--text-hi); font-weight: 500; }
+
+  /* ---------- sections ---------- */
+  section { margin-bottom: 64px; }
+  .section-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 24px; }
+  .section-num { font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--ember); }
+  .section-head h2 { font-size: 26px; font-weight: 600; }
+  .section-lede { color: var(--text-mute); font-size: 15px; margin: -14px 0 24px; max-width: 60ch; }
+
+  /* what it does — feature grid */
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+  }
+  .feature {
+    background: var(--bg-panel);
+    padding: 22px;
+  }
+  .feature .tag {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--spark);
+    display: block; margin-bottom: 10px;
+  }
+  .feature h3 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+  .feature p { font-size: 14px; color: var(--text-mute); margin: 0; }
+
+  /* how it's built */
+  .build-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0; border-top: 1px solid var(--line); }
+  .build-list li {
+    display: grid; grid-template-columns: 160px 1fr;
+    gap: 20px;
+    padding: 16px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 14.5px;
+  }
+  .build-list dt { color: var(--text-hi); font-weight: 500; }
+  .build-list dd { margin: 0; color: var(--text-mute); }
+
+  /* how to use — steps */
+  .steps { display: flex; flex-direction: column; gap: 2px; }
+  .step {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: 20px;
+    padding: 22px 22px 22px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .step:first-child { border-top: 1px solid var(--line); }
+  .step-num {
+    font-family: "Chakra Petch", sans-serif;
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--bg-deep);
+    -webkit-text-stroke: 1.4px var(--spark-dim);
+    line-height: 1;
+    padding-top: 2px;
+  }
+  .step h3 { font-size: 16.5px; font-weight: 600; margin-bottom: 6px; }
+  .step p { margin: 0; font-size: 14.5px; color: var(--text-mute); max-width: 58ch; }
+  .step .note {
+    display: inline-block; margin-top: 10px;
+    font-family: "IBM Plex Mono", monospace; font-size: 12px;
+    color: var(--ember);
+    border-left: 2px solid var(--ember-dim);
+    padding-left: 10px;
+  }
+
+  footer {
+    margin-top: 80px; padding-top: 24px;
+    border-top: 1px solid var(--line);
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+    font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--text-mute);
+  }
+
+  @media (max-width: 560px) {
+    .hero { padding: 56px 20px 44px; }
+    .build-list li { grid-template-columns: 1fr; gap: 4px; }
+    .step { grid-template-columns: 36px 1fr; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #starfield { display: none; }
+  }
+</style>
+
+<div class="page">
+  <div class="hero">
+    <canvas id="starfield"></canvas>
+    <div class="hero-inner">
+      <div class="eyebrow"><span class="dot"></span> Now available &mdash; v1.0 for Windows</div>
+      <h1>Launch<span>Pad</span> X</h1>
+      <p class="hero-sub">
+        One home for every trainer, spoofer, bypass, and unlocker you run &mdash;
+        organized by the game they belong to, launched with a single click,
+        no matter how many steps it actually takes behind the scenes.
+      </p>
+      <div class="hero-credit">built by <b>Sami</b> &middot; <span class="mono">LaunchPad X Setup 1.0.0.exe</span></div>
+    </div>
+  </div>
+
+  <section>
+    <div class="section-head"><span class="section-num">01</span><h2>What it does</h2></div>
+    <p class="section-lede">
+      You already have the tools. LaunchPad X is the one thing that remembers where they are,
+      how each one needs to be started, and gets out of the way after that.
+    </p>
+    <div class="feature-grid">
+      <div class="feature">
+        <span class="tag">Library</span>
+        <h3>Games first, tools underneath</h3>
+        <p>Every trainer, bypass, or spoofer lives inside the game it's for &mdash; not in one long undifferentiated list.</p>
+      </div>
+      <div class="feature">
+        <span class="tag">Detection</span>
+        <h3>Finds what's installed</h3>
+        <p>Scans Steam, Epic, Ubisoft Connect, Roblox, and Xbox/Microsoft Store libraries and pulls in real cover art automatically.</p>
+      </div>
+      <div class="feature">
+        <span class="tag">Launch engine</span>
+        <h3>Handles the messy part</h3>
+        <p>Straight paths, folder scans for renamed executables, archive extraction with retry, and silent elevation &mdash; whatever a given tool needs.</p>
+      </div>
+      <div class="feature">
+        <span class="tag">Universal</span>
+        <h3>Not just .exe</h3>
+        <p>AutoHotkey scripts, batch files, PowerShell, installers &mdash; anything you'd normally double-click to run.</p>
+      </div>
+      <div class="feature">
+        <span class="tag">Yours to shape</span>
+        <h3>Reorder, hide, edit, delete</h3>
+        <p>Drag games and tools into the order you actually use. Hide the ones you don't. Nothing is locked in place.</p>
+      </div>
+      <div class="feature">
+        <span class="tag">Appearance</span>
+        <h3>Make it look like yours</h3>
+        <p>Recolor the whole app from Settings &mdash; it doesn't have to stay the way it shipped.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head"><span class="section-num">02</span><h2>How it's built</h2></div>
+    <p class="section-lede">Three launch protocols, generalized from tools already in daily use, cover almost everything a trainer throws at you.</p>
+    <dl class="build-list">
+      <li><dt>Direct path</dt><dd>Points straight at a known .exe and runs it. For tools that never move or rename themselves.</dd></li>
+      <li><dt>Folder scan</dt><dd>Some tools rename their executable on every update. LaunchPad X watches the folder and launches whatever shows up, elevating silently once you've approved it the first time.</dd></li>
+      <li><dt>Extract &amp; retry</dt><dd>For tools shipped as archives: unpacks the .zip/.7z/.rar, waits for the extracted executable to appear, and retries if the first attempt is too early.</dd></li>
+      <li><dt>Platform protocols</dt><dd>For games themselves &mdash; <code>steam://</code>, Epic, Ubisoft, and Xbox launch URIs are used ahead of any direct exe path, so the real client handles the launch.</dd></li>
+    </dl>
+  </section>
+
+  <section>
+    <div class="section-head"><span class="section-num">03</span><h2>How to use it</h2></div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div>
+          <h3>Install</h3>
+          <p>Run <code>LaunchPad X Setup 1.0.0.exe</code>. It's a standalone Windows installer &mdash; no dependencies, no dev configuration bundled in.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div>
+          <h3>Let it find your games</h3>
+          <p>Open Settings &rarr; Scan &amp; Import. LaunchPad X checks Steam, Epic, Ubisoft Connect, Roblox, and Xbox for what's installed and adds them to your Library with cover art.</p>
+          <span class="note">Missing a game? Add it manually from the same screen.</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div>
+          <h3>Add a tool to a game</h3>
+          <p>Open a game, hit <code>+ Add Tool</code>. Reuse one you've already set up elsewhere, or create a new one: point it at a file or folder, and tell it whether it needs extraction, a retry, or a UAC prompt.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div>
+          <h3>Launch</h3>
+          <p>Click the tool's card. LaunchPad X runs whatever sequence you configured &mdash; elevation, extraction, retries &mdash; and reports back if something needs your attention.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">5</div>
+        <div>
+          <h3>Arrange it your way</h3>
+          <p>Drag games and tools to reorder them, hide the ones you're not using, and tune the color theme from Settings whenever you like.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <span>LaunchPad X &middot; v1.0 &middot; Windows</span>
+    <span>by Sami</span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  var canvas = document.getElementById('starfield');
+  if (!canvas || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var ctx = canvas.getContext('2d');
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var w, h, stars = [];
+
+  function size() {
+    var rect = canvas.parentElement.getBoundingClientRect();
+    w = rect.width; h = rect.height;
+    canvas.width = w * dpr; canvas.height = h * dpr;
+    canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    var count = Math.round((w * h) / 5200);
+    stars = [];
+    for (var i = 0; i < count; i++) {
+      var warm = Math.random() < 0.16;
+      stars.push({
+        x: Math.random() * w,
+        y: Math.random() * h,
+        r: Math.random() * 1.3 + 0.3,
+        p: Math.random() * Math.PI * 2,
+        s: Math.random() * 0.015 + 0.006,
+        warm: warm
+      });
+    }
+  }
+
+  function frame(t) {
+    ctx.clearRect(0, 0, w, h);
+    for (var i = 0; i < stars.length; i++) {
+      var st = stars[i];
+      var a = 0.35 + 0.65 * Math.abs(Math.sin(st.p + t * st.s));
+      ctx.beginPath();
+      ctx.fillStyle = st.warm
+        ? 'rgba(255,156,82,' + (a * 0.8).toFixed(3) + ')'
+        : 'rgba(127,216,255,' + a.toFixed(3) + ')';
+      ctx.arc(st.x, st.y, st.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    requestAnimationFrame(frame);
+  }
+
+  size();
+  window.addEventListener('resize', size);
+  requestAnimationFrame(frame);
+})();
+</script>

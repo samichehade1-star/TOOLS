@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/win-unpacked/
+*.exe
+*.msi
+
+# Electron-builder debug
+builder-debug.yml
+builder-effective-config.yaml
+
+# .NET build output
+bin/
+obj/
+publish/
+
+# Installer staging
+_installer/staging/
+_installer/dist/
+
+# OS/editor cruft
+Thumbs.db
+.DS_Store
+*.log

@@ -1,0 +1,1312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CHUB Mod Manager</title>
+    <!-- Sets the dark background before anything else, purely from local
+         inline CSS with zero network dependency. Tailwind/Font Awesome/Google
+         Fonts below are all fetched from a CDN, and the browser blocks first
+         paint on that fetch — without this, the page renders with the
+         default white background for however long that takes, which shows up
+         as a white flash on every launch. -->
+    <style>html, body { background-color: #121212; margin: 0; }</style>
+    <!-- tailwind css cdn -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- font awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        :root {
+            --bg-color-dark: #121212;
+            --surface-color-dark: #1e1e1e;
+            --sidebar-color: #1e1e1e;
+            --mod-card-color: #1e1e1e;
+            --mod-card-on-color: #2d2440;
+            --mod-card-off-color: #1e1e1e;
+            --mod-card-text-color: #e0e0e0;
+            --mod-card-text-secondary: #a0a0a0;
+            --mod-card-on-text-color: #f5f5f5;
+            --mod-card-on-text-secondary: #d7d7d7;
+            --mod-card-off-text-color: #e0e0e0;
+            --mod-card-off-text-secondary: #a0a0a0;
+            --toggle-knob-on-color: #141414;
+            --primary-text-dark: #e0e0e0;
+            --secondary-text-dark: #a0a0a0;
+            --accent-color: #bb86fc;
+            --accent-hover: #a252f8;
+            --border-color-dark: #2c2c2c;
+            --title-bar-color: #1e1e1e;
+            --font-family: 'Inter', sans-serif;
+        }
+        /* hide scrollbars everywhere */
+        ::-webkit-scrollbar { width: 0 !important; height: 0 !important; }
+        ::-webkit-scrollbar-thumb { background: transparent !important; }
+        ::-webkit-scrollbar-track { background: transparent !important; }
+        #bottom-fade {
+            position: absolute;
+            left: 0; right: 0; bottom: 0;
+            height: 140px;
+            background: linear-gradient(to bottom, transparent, #000000 95%);
+            pointer-events: none;
+            z-index: 5;
+        }
+        body {
+            font-family: var(--font-family);
+            background-color: var(--bg-color-dark);
+            color: var(--primary-text-dark);
+            overflow: hidden;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        #custom-title-bar {
+            -webkit-app-region: drag;
+            height: 32px;
+            background-color: var(--title-bar-color, var(--surface-color-dark));
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 10px;
+            border-bottom: 1px solid var(--border-color-dark);
+            color: var(--primary-text-dark);
+            font-size: 0.9rem;
+            flex-shrink: 0;
+        }
+        #custom-title-bar-buttons {
+            -webkit-app-region: no-drag;
+            display: flex;
+            gap: 5px;
+        }
+        #title-bar-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            -webkit-app-region: no-drag;
+        }
+        #discord-button {
+            background: none;
+            border: none;
+            color: var(--secondary-text-dark);
+            font-size: 1.05rem;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 0.35rem;
+            cursor: pointer;
+            transition: color 0.15s, background-color 0.15s;
+        }
+        #discord-button:hover {
+            color: #5865F2;
+            background-color: rgba(88, 101, 242, 0.12);
+        }
+        .title-bar-button {
+            background-color: transparent;
+            border: none;
+            color: var(--primary-text-dark);
+            font-size: 1.1rem;
+            width: 30px;
+            height: 30px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            border-radius: 4px;
+            pointer-events: auto;
+        }
+        .title-bar-button:hover {
+            background-color: #222;
+        }
+        .title-bar-button.close:hover {
+            background-color: #440000;
+        }
+        .title-bar-button:active {
+            background-color: #333;
+            transform: translateY(1px);
+        }
+        #app {
+            display: flex;
+            flex-grow: 1;
+            overflow: hidden;
+        }
+        #sidebar {
+            width: 12.5rem;
+            background-color: var(--sidebar-color);
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            border-right: 1px solid var(--border-color-dark);
+            flex-shrink: 0;
+            overflow-y: auto;
+        }
+        #sidebar-logo {
+            width: 100%;
+            height: auto;
+            display: block;
+            margin-bottom: 0;
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+        #sidebar-credit {
+            text-align: center;
+            font-size: 0.7rem;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--secondary-text-dark);
+            opacity: 0.55;
+            margin-bottom: 0.5rem;
+            user-select: none;
+        }
+        #content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+        .tab-button {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            color: var(--primary-text-dark);
+            font-weight: 500;
+            transition: background-color 0.2s, color 0.2s;
+            cursor: pointer;
+            background-color: var(--surface-color-dark);
+            text-transform: lowercase;
+        }
+        .tab-button:hover {
+            background-color: var(--accent-hover);
+        }
+        .tab-button.active {
+            background-color: var(--accent-color);
+            color: #121212;
+        }
+        /* trainer/spoofer buttons while a launch is retrying in the background —
+           still clickable, but clicking now cancels instead of launching again */
+        .tab-button.tool-launching {
+            border-color: #e0555f !important;
+            color: #ff8a8a;
+            cursor: pointer;
+        }
+        .tab-button.tool-launching:hover {
+            background-color: color-mix(in srgb, #e0555f 18%, transparent);
+        }
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.5s ease-in-out;
+            padding: 2rem;
+            position: relative;
+            height: 100%;
+            overflow-y: auto;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        /* console-tab needs a flex column layout (toolbar + scrolling output),
+           but ONLY while it's the active tab — otherwise this would override
+           the base .tab-content{display:none} rule via specificity and the
+           console would render permanently on every page. */
+        .tab-content.console-tab-flex.active {
+            display: flex;
+            flex-direction: column;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--surface-color-dark); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: var(--accent-color); border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--accent-hover); }
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            display: flex; justify-content: center; align-items: center; z-index: 1000;
+        }
+        #message-modal { z-index: 1001; }
+        .modal-content {
+            background-color: var(--surface-color-dark);
+            padding: 2rem; border-radius: 0.75rem;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.7);
+            width: 27.5rem; max-width: 90vw; max-height: 85vh; overflow-y: auto;
+            color: var(--primary-text-dark); border: 1px solid var(--accent-color);
+        }
+        /* modals that intentionally need more room (mod pickers, archived-mods
+           list, language grid) opt back into a wider layout */
+        .modal-content.modal-wide { width: 40rem; max-width: 90vw; }
+        .modal-body p {
+            overflow-wrap: break-word;
+            word-break: break-word;
+            line-height: 1.55;
+        }
+        .modal-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 1.5rem; border-bottom: 1px solid var(--border-color-dark); padding-bottom: 1rem;
+        }
+        .modal-header h2 { font-size: 1.75rem; font-weight: 600; color: #ffffff; }
+        .modal-close-button {
+            background: none; border: none; font-size: 1.5rem; color: var(--primary-text-dark);
+            cursor: pointer; transition: color 0.2s;
+        }
+        .modal-close-button:hover { color: var(--accent-hover); }
+        .modal-body { margin-bottom: 1.5rem; }
+        .modal-footer { display: flex; justify-content: flex-end; gap: 1rem; }
+        .modal-button {
+            padding: 0.75rem 1.5rem; border-radius: 0.5rem; font-weight: 600;
+            cursor: pointer; transition: background-color 0.2s, transform 0.1s;
+        }
+        .modal-button-primary {
+            background-color: var(--accent-color); color: var(--bg-color-dark);
+        }
+        .modal-button-primary:hover { background-color: var(--accent-hover); transform: translateY(-1px); }
+        .modal-button-secondary {
+            background-color: var(--surface-color-dark); color: var(--primary-text-dark);
+            border: 1px solid var(--accent-color);
+        }
+        .modal-button-secondary:hover { background-color: var(--bg-hover); transform: translateY(-1px); }
+        .language-option {
+            display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 1rem;
+            border-radius: 0.5rem; cursor: pointer; transition: background-color 0.2s;
+            background-color: var(--surface-color-dark);
+        }
+        .language-option:hover { background-color: var(--accent-hover); }
+        .language-option.selected {
+            background-color: var(--accent-color); color: var(--bg-color-dark);
+        }
+        .language-option img { width: 24px; height: 24px; border-radius: 3px; box-shadow: 0 0 5px rgba(0,0,0,0.3); }
+        .console-log-entry { margin-bottom: 0.25rem; padding: 0.25rem 0.5rem; border-radius: 0.25rem; word-break: break-all; }
+        .console-log-entry.info { color: #b0b0b0; }
+        .console-log-entry.warn { color: #ffeb3b; }
+        .console-log-entry.error { color: #f44336; }
+        .console-log-entry.system { color: #90caf9; }
+        .console-log-entry.success { color: var(--accent-color); }
+        .console-log-entry.user { color: #bdbdbd; }
+        .mod-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 0.75rem 1rem; background-color: var(--mod-card-color);
+            border-radius: 0.5rem; margin-bottom: 0.5rem; border: 1px solid var(--border-color-dark);
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+        .mod-item-installed {
+            border-left: 4px solid var(--accent-color);
+            background-color: var(--mod-card-on-color);
+            border-color: color-mix(in srgb, var(--accent-color) 35%, var(--border-color-dark));
+        }
+        .mod-item-not-installed {
+            border-left: 4px solid #444444;
+            background-color: var(--mod-card-off-color);
+        }
+        .mod-item-name { font-weight: 500; color: var(--mod-card-text-color); }
+        .mod-item-installed .mod-item-name { color: var(--mod-card-on-text-color); }
+        .mod-item-not-installed .mod-item-name { color: var(--mod-card-off-text-color); }
+        .mod-item-author { color: var(--mod-card-text-secondary); }
+        .mod-item-installed .mod-item-author { color: var(--mod-card-on-text-secondary); }
+        .mod-item-not-installed .mod-item-author { color: var(--mod-card-off-text-secondary); }
+        .mod-rename-button, .mod-archive-button, .mod-delete-button { color: var(--mod-card-text-secondary) !important; }
+        .mod-item-installed .mod-rename-button, .mod-item-installed .mod-archive-button { color: var(--mod-card-on-text-secondary) !important; }
+        .mod-item-not-installed .mod-rename-button, .mod-item-not-installed .mod-archive-button { color: var(--mod-card-off-text-secondary) !important; }
+        .mod-delete-button { color: #e0555f !important; }
+        .mod-toggle-button {
+            padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 600;
+            cursor: pointer; transition: background-color 0.2s, transform 0.1s;
+        }
+        .mod-toggle-button.on { background-color: var(--accent-color); color: var(--bg-color-dark); }
+        .mod-toggle-button.on:hover { background-color: var(--accent-hover); transform: translateY(-1px); }
+        .mod-toggle-button.off { background-color: #333333; color: white; }
+        .mod-toggle-button.off:hover { background-color: #444444; transform: translateY(-1px); }
+        .mod-toggle-button.disabled { background-color: #555; cursor: not-allowed; opacity: 0.7; }
+        .deploy-target-item {
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 0.6rem 1rem; background-color: var(--surface-color-dark);
+            border-radius: 0.5rem; border: 1px solid var(--border-color-dark);
+            border-left: 4px solid var(--accent-color);
+        }
+        .deploy-target-platform {
+            display: inline-block; font-weight: 700; font-size: 0.75rem;
+            text-transform: uppercase; letter-spacing: 0.03em;
+            background-color: var(--accent-color); color: var(--bg-color-dark);
+            padding: 0.15rem 0.5rem; border-radius: 0.3rem; margin-right: 0.75rem;
+        }
+        .deploy-target-path { font-family: monospace; font-size: 0.85rem; color: var(--secondary-text-dark); word-break: break-all; }
+        .deploy-target-remove {
+            background: none; border: none; color: #e0555f; cursor: pointer;
+            padding: 0.25rem 0.5rem; font-size: 1rem; flex-shrink: 0; margin-left: 0.75rem;
+        }
+        .deploy-target-remove:hover { color: #ea6b74; }
+        .color-swatch-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.5rem;
+            max-width: 100%;
+        }
+        .color-swatch-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+        .color-swatch-item label {
+            font-size: 0.85rem;
+            text-transform: capitalize;
+            color: color-mix(in srgb, var(--accent-color) 65%, var(--secondary-text-dark));
+        }
+        .color-swatch-item input[type="color"] {
+            width: 4.75rem;
+            height: 2.625rem;
+            padding: 0;
+            border: 1px solid var(--border-color-dark);
+            border-radius: 0.4rem;
+            background: none;
+            cursor: pointer;
+            -webkit-appearance: none;
+            appearance: none;
+            transition: border-color 0.15s, transform 0.15s;
+        }
+        .color-swatch-item input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+            border-radius: 0.4rem;
+        }
+        .color-swatch-item input[type="color"]::-webkit-color-swatch {
+            border: none;
+            border-radius: 0.35rem;
+        }
+        .color-swatch-item input[type="color"]:hover {
+            border-color: var(--accent-color);
+            transform: translateY(-2px);
+        }
+        /* --- layout editor: font size is a continuous slider (12-22px), set
+           directly as inline style on <html> in JS — see applyLayoutSettings().
+           Everything below uses rem/em instead of fixed px specifically so it
+           scales proportionally with that root size instead of the text
+           growing alone while icons/controls/containers stay a fixed size
+           (which is what looked "out of proportion" at the top of the old
+           small/medium/large range). */
+
+        /* --- layout editor: text glow (color + intensity are adjustable) --- */
+        :root {
+            --glow-color: var(--accent-color);
+            --glow-size: 10px;
+        }
+        body.text-glow-on .tab-content h1,
+        body.text-glow-on .tab-content h2,
+        body.text-glow-on .glow-target,
+        body.text-glow-on .tab-button.active,
+        body.text-glow-on #sidebar-logo {
+            text-shadow: 0 0 var(--glow-size) var(--glow-color),
+                         0 0 calc(var(--glow-size) * 2.2) color-mix(in srgb, var(--glow-color) 60%, transparent);
+        }
+        body.text-glow-on #sidebar-logo {
+            filter: drop-shadow(0 0 calc(var(--glow-size) * 0.8) var(--glow-color))
+                    drop-shadow(0 0 calc(var(--glow-size) * 1.8) color-mix(in srgb, var(--glow-color) 55%, transparent));
+        }
+        /* --- layout editor: option row shared style --- */
+        .layout-option-row {
+            display: flex; align-items: center; justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+        #glow-color-picker {
+            width: 3.5rem; height: 2rem; padding: 0; border: 1px solid var(--border-color-dark);
+            border-radius: 0.35rem; background: none; cursor: pointer;
+            -webkit-appearance: none; appearance: none;
+        }
+        #glow-color-picker::-webkit-color-swatch-wrapper { padding: 0; border-radius: 0.35rem; }
+        #glow-color-picker::-webkit-color-swatch { border: none; border-radius: 0.3rem; }
+        #available-mods-sort-name-btn.active-filter {
+            background-color: var(--accent-color);
+            color: var(--bg-color-dark);
+        }
+        #mod-profiles-row {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            flex-wrap: wrap;
+            margin-bottom: 1.25rem;
+            padding: 0.6rem 0.9rem;
+            background-color: var(--surface-color-dark);
+            border: 1px solid var(--border-color-dark);
+            border-radius: 0.6rem;
+        }
+        #mod-profiles-row select,
+        #mod-profiles-row input[type="text"] {
+            padding: 0.4rem 0.6rem;
+            border-radius: 0.4rem;
+            border: 1px solid var(--border-color-dark);
+            background-color: var(--bg-color-dark);
+            color: var(--primary-text-dark);
+        }
+        #mod-profiles-row #new-profile-name { flex-grow: 1; min-width: 160px; }
+        #mod-library-toolbar {
+            display: flex;
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+        #mod-library-search {
+            flex-grow: 1;
+            padding: 0.6rem 0.9rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--border-color-dark);
+            background-color: var(--surface-color-dark);
+            color: var(--primary-text-dark);
+        }
+        #mod-library-sort {
+            padding: 0.6rem 0.9rem;
+            border-radius: 0.5rem;
+            border: 1px solid var(--border-color-dark);
+            background-color: var(--surface-color-dark);
+            color: var(--accent-color);
+            font-weight: 600;
+        }
+        .toggle-switch.small {
+            width: 2.5rem;
+            height: 1.375rem;
+            flex-shrink: 0;
+        }
+        .toggle-switch.small .slider:before {
+            height: 1rem;
+            width: 1rem;
+            left: 0.1875rem;
+            bottom: 0.1875rem;
+        }
+        .toggle-switch.small input:checked + .slider:before {
+            transform: translateX(1.125rem);
+        }
+        .mod-pakchunk-number {
+            font-family: 'Consolas', 'Courier New', monospace;
+            font-weight: 700;
+            font-size: 0.85rem;
+            letter-spacing: 0.02em;
+            color: var(--accent-color);
+            background-color: color-mix(in srgb, var(--accent-color) 14%, transparent);
+            border: 1px solid color-mix(in srgb, var(--accent-color) 40%, transparent);
+            border-radius: 0.4rem;
+            padding: 0.2rem 0.55rem;
+            min-width: 3.125rem;
+            text-align: center;
+            margin-right: 0.75rem;
+            white-space: nowrap;
+        }
+        body.hide-mod-numbers .mod-pakchunk-number { display: none; }
+        input[type="text"], select, textarea {
+            color: var(--primary-text-dark); background-color: var(--surface-color-dark);
+            border: 1px solid var(--border-color-dark);
+        }
+        input[type="text"]:focus, select:focus, textarea:focus {
+            border-color: var(--accent-color); outline: none;
+        }
+        #home-tab-bg {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: radial-gradient(ellipse at top, var(--surface-color-dark), var(--bg-color-dark) 70%);
+            z-index: -1;
+            opacity: 0.5;
+        }
+        .dashboard-card {
+            background-color: var(--surface-color-dark);
+            border: 1px solid var(--border-color-dark);
+            transition: all 0.3s ease;
+        }
+        .dashboard-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--accent-color);
+        }
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 3.75rem;
+            height: 2.125rem;
+            flex-shrink: 0;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #333;
+            transition: .4s;
+            border-radius: 2.125rem;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 1.625rem;
+            width: 1.625rem;
+            left: 0.25rem;
+            bottom: 0.25rem;
+            background-color: white;
+            border: 1px solid rgba(0,0,0,0.25);
+            box-sizing: border-box;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: var(--accent-color);
+        }
+        input:focus + .slider {
+            box-shadow: 0 0 1px var(--accent-color);
+        }
+        input:checked + .slider:before {
+            transform: translateX(1.625rem);
+            background-color: var(--toggle-knob-on-color, #141414);
+            border-color: rgba(0,0,0,0.15);
+        }
+        #drag-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            border: 4px dashed var(--accent-color);
+            z-index: 9999;
+        }
+        .success-checkmark {
+            color: #4caf50;
+            font-size: 3rem;
+            animation: fadeInOut 1.5s ease-in-out;
+        }
+        @keyframes fadeInOut {
+            0%, 100% { opacity: 0; }
+            50% { opacity: 1; }
+        }
+        #mods-tab {
+            border-radius: 1.25rem;
+            box-sizing: border-box;
+            position: relative;
+        }
+        #mods-header-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-start;
+            gap: 2rem;
+            margin-bottom: 1.5rem;
+            position: relative;
+        }
+        #mods-title {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #fff;
+            margin: 0;
+            padding: 0;
+        }
+        #mods-drop-message {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            gap: 0.5rem;
+            opacity: 0.55;
+            font-size: 0.85rem;
+            color: var(--secondary-text-dark);
+            font-weight: 500;
+            background: none;
+            border: none;
+            box-shadow: none;
+            margin: 0.4rem 0 0 0;
+            padding: 0;
+            transition: opacity 0.2s, color 0.2s;
+        }
+        #mods-drop-message i {
+            font-size: 0.9rem;
+            color: var(--accent-color);
+        }
+        #mods-header-row:hover #mods-drop-message {
+            opacity: 0.9;
+            color: var(--primary-text-dark);
+        }
+        /* --- downloads tab --- */
+        #downloads-header-row {
+            display: flex;
+            align-items: baseline;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        #downloads-title {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #fff;
+            margin: 0;
+            text-transform: lowercase;
+        }
+        #downloads-subtitle {
+            color: var(--secondary-text-dark);
+            font-size: 0.9rem;
+        }
+        #downloads-path-row {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+            padding: 0.6rem 0.9rem;
+            background-color: var(--surface-color-dark);
+            border: 1px solid var(--border-color-dark);
+            border-radius: 0.6rem;
+        }
+        #downloads-path-text {
+            flex-grow: 1;
+            font-family: 'Consolas', monospace;
+            font-size: 0.85rem;
+            color: var(--secondary-text-dark);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        #downloads-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .download-card {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.9rem 1.1rem;
+            background-color: var(--mod-card-color);
+            border: 1px solid var(--border-color-dark);
+            border-radius: 0.6rem;
+            border-left: 4px solid var(--accent-color);
+        }
+        .download-card-icon {
+            font-size: 1.4rem;
+            color: var(--accent-color);
+            flex-shrink: 0;
+        }
+        .download-card-info {
+            flex-grow: 1;
+            min-width: 0;
+        }
+        .download-card-name {
+            font-weight: 600;
+            color: var(--mod-card-text-color);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        .download-card-name input[type="text"] {
+            font-weight: 600;
+            background-color: var(--mod-card-color);
+            color: var(--mod-card-text-color);
+            border: 1px solid var(--accent-color);
+            border-radius: 0.3rem;
+            padding: 0.15rem 0.4rem;
+            font-size: 1em;
+            flex-grow: 1;
+            min-width: 0;
+            outline: none;
+        }
+        .download-card-name input[type="text"]:focus {
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-color) 45%, transparent);
+        }
+        .download-card-meta {
+            font-size: 0.8rem;
+            color: var(--mod-card-text-secondary);
+            margin-top: 0.15rem;
+        }
+        .download-card-actions {
+            display: flex;
+            gap: 0.5rem;
+            flex-shrink: 0;
+        }
+        .download-card-actions button {
+            padding: 0.45rem 0.7rem;
+            border-radius: 0.4rem;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: background-color 0.15s, transform 0.1s;
+        }
+        .download-rename-btn {
+            background: none;
+            border: 1px solid var(--border-color-dark);
+            color: var(--mod-card-text-secondary);
+        }
+        .download-rename-btn:hover { border-color: var(--accent-color); color: var(--mod-card-text-color); }
+        .download-move-btn {
+            background-color: var(--accent-color);
+            color: var(--bg-color-dark);
+            border: none;
+            font-weight: 600;
+        }
+        .download-move-btn:hover { background-color: var(--accent-hover); transform: translateY(-1px); }
+        .download-move-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .download-card-variant {
+            flex-direction: column;
+            align-items: stretch;
+        }
+        .variant-note {
+            font-size: 0.8rem;
+            color: var(--mod-card-text-secondary);
+            background-color: color-mix(in srgb, var(--accent-color) 10%, transparent);
+            border: 1px solid color-mix(in srgb, var(--accent-color) 30%, transparent);
+            border-radius: 0.4rem;
+            padding: 0.5rem 0.7rem;
+            margin-bottom: 0.75rem;
+        }
+        .variant-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+        .variant-option-row {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.5rem 0.7rem;
+            background-color: var(--mod-card-color);
+            border: 1px solid var(--border-color-dark);
+            border-radius: 0.4rem;
+            cursor: pointer;
+            transition: border-color 0.15s;
+        }
+        .variant-option-row:hover { border-color: var(--accent-color); }
+        .variant-checkbox { accent-color: var(--accent-color); width: 16px; height: 16px; flex-shrink: 0; }
+        .variant-name-field {
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            min-width: 0;
+        }
+        .variant-name-field > i {
+            color: var(--mod-card-text-secondary);
+            font-size: 0.75rem;
+            flex-shrink: 0;
+        }
+        /* Always looks like a real text field, not plain label text — this
+           used to be invisible (transparent bg/border) until hovered, which
+           made it easy to miss that it's editable at all and just create the
+           mod under the default variant name without realizing renaming was
+           an option. */
+        .variant-name-input {
+            flex-grow: 1;
+            min-width: 0;
+            color: var(--mod-card-text-color);
+            font-weight: 500;
+            background-color: var(--surface-color-dark);
+            border: 1px solid var(--border-color-dark);
+            border-radius: 0.3rem;
+            padding: 0.25rem 0.4rem;
+            font-family: inherit;
+            font-size: inherit;
+        }
+        .variant-name-input:hover {
+            border-color: color-mix(in srgb, var(--accent-color) 50%, var(--border-color-dark));
+        }
+        .variant-name-input:focus {
+            border-color: var(--accent-color);
+            outline: none;
+        }
+        .variant-meta { font-size: 0.78rem; color: var(--mod-card-text-secondary); }
+        /* --- settings tab: collapsible sections --- */
+        .settings-section {
+            background-color: var(--surface-color-dark);
+            border: 1px solid var(--border-color-dark);
+            border-radius: 0.75rem;
+            overflow: hidden;
+        }
+        .settings-section-header {
+            list-style: none;
+            cursor: pointer;
+            padding: 1.1rem 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+            user-select: none;
+            transition: background-color 0.15s;
+        }
+        .settings-section-header::-webkit-details-marker { display: none; }
+        .settings-section-header:hover { background-color: color-mix(in srgb, var(--accent-color) 8%, transparent); }
+        .settings-section-header .settings-section-icon {
+            color: var(--accent-color);
+            font-size: 1.1rem;
+            width: 1.3rem;
+            text-align: center;
+            flex-shrink: 0;
+        }
+        .settings-section-header-text { flex-grow: 1; min-width: 0; }
+        .settings-section-title {
+            font-size: 1.05rem;
+            font-weight: 600;
+            color: var(--primary-text-dark);
+        }
+        .settings-section-subtitle {
+            font-size: 0.8rem;
+            color: var(--secondary-text-dark);
+            margin-top: 0.15rem;
+        }
+        .settings-section-chevron {
+            color: var(--secondary-text-dark);
+            transition: transform 0.2s;
+            flex-shrink: 0;
+        }
+        .settings-section[open] > .settings-section-header .settings-section-chevron {
+            transform: rotate(90deg);
+        }
+        .settings-section-body {
+            padding: 0.25rem 1.25rem 1.5rem 1.25rem;
+            border-top: 1px solid var(--border-color-dark);
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+        .settings-section-always-open > .settings-section-header {
+            cursor: default;
+        }
+        .settings-section-always-open > .settings-section-header:hover {
+            background-color: transparent;
+        }
+        .settings-section-always-open > .settings-section-header .settings-section-chevron {
+            display: none;
+        }
+        .settings-row-flex {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        .settings-row-flex > input[type="text"] {
+            flex: 1 1 220px;
+            min-width: 0;
+        }
+        .settings-hint {
+            color: var(--secondary-text-dark);
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+            line-height: 1.5;
+        }
+        .settings-subrow + .settings-subrow {
+            margin-top: 1.1rem;
+            padding-top: 1.1rem;
+            border-top: 1px dashed var(--border-color-dark);
+        }
+        .settings-subrow-label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--secondary-text-dark);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+        #installed-mods-list-scrollable {
+            flex: 1 1 0%;
+            min-height: 0;
+            max-height: none;
+            overflow-y: auto;
+            margin-bottom: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="drag-overlay">drop mods to install</div>
+    <div id="custom-title-bar">
+        <div class="flex items-center">
+             <!-- left side intentionally empty: drag region -->
+        </div>
+        <div id="title-bar-right">
+            <button id="discord-button" title="Join our Discord"><i class="fa-brands fa-discord"></i></button>
+            <div id="custom-title-bar-buttons">
+                <button class="title-bar-button" id="minimize-button"><i class="fas fa-minus"></i></button>
+                <button class="title-bar-button" id="maximize-button"><i class="far fa-square"></i></button>
+                <button class="title-bar-button close" id="close-button"><i class="fas fa-times"></i></button>
+            </div>
+        </div>
+    </div>
+    <div id="app">
+        <div id="sidebar">
+            <img id="sidebar-logo" src="assets/chub-logo.png" alt="CHUB Mod Manager">
+            <div id="sidebar-credit">by SAMI</div>
+            <div class="flex flex-col gap-2">
+                <button class="tab-button active" data-tab="mods"><i class="fas fa-gamepad"></i> <span data-translate="nav-mods">mods</span></button>
+                <button class="tab-button" data-tab="downloads"><i class="fas fa-download"></i> <span data-translate="nav-downloads">downloads</span></button>
+                <button class="tab-button" data-tab="console"><i class="fas fa-terminal"></i> <span data-translate="nav-console">console</span></button>
+                <button class="tab-button" data-tab="settings"><i class="fas fa-cog"></i> <span data-translate="nav-settings">settings</span></button>
+            </div>
+            <div class="flex flex-col gap-2" style="margin-top:auto;">
+                <button id="launch-trainer-btn" class="tab-button" style="border: 1px solid var(--accent-color); display:none;" title="launch the trainer"><i class="fas fa-bolt"></i> <span data-translate="trainer-button">trainer</span></button>
+                <button id="launch-spoofer-btn" class="tab-button" style="border: 1px solid var(--accent-color); display:none;" title="launch the spoofer"><i class="fas fa-user-secret"></i> <span data-translate="spoofer-button">spoofer</span></button>
+                <button id="launch-pakbypass-btn" class="tab-button" style="border: 1px solid var(--accent-color); display:none;" title="launch pak bypass"><i class="fas fa-shield-halved"></i> <span data-translate="pakbypass-button">pak bypass</span></button>
+                <button id="launch-unlocker-btn" class="tab-button" style="border: 1px solid var(--accent-color); display:none;" title="launch the unlocker"><i class="fas fa-unlock"></i> <span data-translate="unlocker-button">unlocker</span></button>
+                <select id="launch-game-platform" class="p-2 rounded-md" style="width:100%;">
+                    <option value="Steam" data-translate="platform-steam">steam</option>
+                    <option value="Microsoft" data-translate="platform-microsoft">microsoft</option>
+                    <option value="Epic Games" data-translate="platform-epic">epic games</option>
+                </select>
+                <button id="launch-game-btn" class="tab-button" style="border: 1px solid var(--accent-color);" title="launch dead by daylight on the selected platform"><i class="fas fa-play"></i> <span data-translate="launch-game-button">launch game</span></button>
+            </div>
+        </div>
+        <div id="content">
+            <div id="bottom-fade"></div>
+            <!-- mods tab -->
+            <div id="mods-tab" class="tab-content active">
+                <div id="mods-header-row">
+                    <h2 id="mods-title" data-translate="mods-title">mods</h2>
+                    <div id="mods-drop-message" data-translate="drop-mmpackage-message">
+                        <i class="fas fa-file-import"></i>
+                        <span>drag & drop to install</span>
+                    </div>
+                </div>
+                <div id="mod-profiles-row">
+                    <i class="fas fa-layer-group" style="color: var(--secondary-text-dark);"></i>
+                    <select id="mod-profile-select"><option value="" data-translate="profile-select-placeholder">— select a profile —</option></select>
+                    <button id="load-profile-btn" class="font-semibold py-2 px-3 rounded-md transition duration-200" style="border: 1px solid var(--accent-color);"><i class="fas fa-play mr-1"></i> <span data-translate="load-profile-button">load</span></button>
+                    <button id="delete-profile-btn" class="font-semibold py-2 px-3 rounded-md transition duration-200" style="border: 1px solid var(--border-color-dark);"><i class="fas fa-trash mr-1"></i> <span data-translate="delete-profile-button">delete</span></button>
+                    <span style="width:1px;align-self:stretch;background:var(--border-color-dark);"></span>
+                    <input id="new-profile-name" type="text" placeholder="new profile name..." data-translate-placeholder="new-profile-name-placeholder">
+                    <button id="save-profile-btn" class="font-semibold py-2 px-3 rounded-md transition duration-200" style="border: 1px solid var(--accent-color);"><i class="fas fa-save mr-1"></i> <span data-translate="save-profile-button">save current as profile</span></button>
+                </div>
+                <div id="mod-library-toolbar">
+                    <input id="mod-library-search" type="text" placeholder="search mods by name or author..." data-translate-placeholder="search-mods-placeholder">
+                    <select id="mod-library-sort">
+                        <option value="alphabetical" data-translate="sort-alphabetical">alphabetical</option>
+                        <option value="recent" data-translate="sort-recent">recently added</option>
+                    </select>
+                </div>
+                <div style="display:flex;gap:1rem;align-items:center;margin-bottom:1.5rem;">
+                    <button id="install-mods-button" class="bg-1a1a1a hover:bg-2a2a2a text-white font-bold py-3 px-6 rounded-lg shadow-lg transition duration-200 ease-in-out transform hover:-translate-y-1" style="border: 1px solid var(--accent-color);">
+                        <i class="fas fa-plus-circle mr-2"></i> install mods
+                    </button>
+                    <button id="view-archived-mods-button" class="font-semibold py-3 px-5 rounded-lg transition duration-200" style="border: 1px solid var(--border-color-dark);">
+                        <i class="fas fa-box-archive mr-2"></i> <span data-translate="archived-mods-button">archived mods</span> <span id="archived-mods-count"></span>
+                    </button>
+                </div>
+                <div id="mods-tab-flex">
+                  <div id="installed-mods-list-scrollable">
+                    <div id="installed-mods-list" class="space-y-3">
+                        <p class="text-gray-400 text-center" id="no-mods-installed-message" data-translate="no-mods-installed">no mods installed yet.</p>
+                    </div>
+                  </div>
+                </div>
+            </div>
+            <!-- downloads tab -->
+            <div id="downloads-tab" class="tab-content">
+                <div id="downloads-header-row">
+                    <h2 id="downloads-title" data-translate="downloads-title">downloads</h2>
+                    <span id="downloads-subtitle" data-translate="downloads-subtitle">real mod archives found in your downloads folder</span>
+                </div>
+                <div id="downloads-path-row">
+                    <i class="fas fa-folder-open" style="color: var(--secondary-text-dark);"></i>
+                    <span id="downloads-path-text"></span>
+                    <button id="change-downloads-path-btn" class="font-semibold py-1.5 px-3 rounded-md transition duration-200" style="border: 1px solid var(--border-color-dark);" data-translate="change-folder-button">change folder</button>
+                    <button id="rescan-downloads-btn" class="font-semibold py-1.5 px-3 rounded-md transition duration-200" style="border: 1px solid var(--accent-color);"><i class="fas fa-rotate-right mr-1"></i> <span data-translate="rescan-button">rescan</span></button>
+                </div>
+                <div id="downloads-list"></div>
+                <p class="text-gray-400 text-center" id="no-downloads-message" style="display:none;" data-translate="no-downloads-message">no mod archives found here — only zips/7z/rar/mmpackage files that actually contain pakchunk files show up.</p>
+            </div>
+            <!-- settings tab -->
+            <div id="settings-tab" class="tab-content">
+                <h2 class="text-3xl font-bold mb-6 text-white" data-translate="settings-title">settings</h2>
+                <div class="space-y-4">
+
+                    <details class="settings-section settings-section-always-open" open>
+                        <summary class="settings-section-header">
+                            <i class="fas fa-sliders settings-section-icon"></i>
+                            <div class="settings-section-header-text">
+                                <div class="settings-section-title" data-translate="settings-section-general">general</div>
+                            </div>
+                        </summary>
+                        <div class="settings-section-body">
+                            <div>
+                                <label for="mod-folder-path" class="block text-sm font-medium text-gray-300 mb-2" data-translate="mod-folder-path-label">mod folder path:</label>
+                                <div class="settings-row-flex">
+                                    <input type="text" id="mod-folder-path" class="p-3 rounded-md" readonly>
+                                    <button id="select-mod-folder" class="font-semibold py-2 px-4 rounded-md transition duration-200" style="border: 1px solid var(--accent-color);"><i class="fas fa-folder-open mr-2"></i> browse</button>
+                                </div>
+                            </div>
+                            <div>
+                                <label for="language-selector" class="block text-sm font-medium text-gray-300 mb-2" data-translate="language-label">language:</label>
+                                <button id="language-selector" class="font-semibold py-2 px-4 rounded-md transition duration-200 flex items-center gap-2" style="border: 1px solid var(--accent-color);">
+                                    <img id="current-language-flag" src="https://flagcdn.com/w20/us.png" alt="english flag" class="w-6 h-6 rounded-sm">
+                                    <span id="current-language-text">english</span>
+                                    <i class="fas fa-chevron-down ml-auto"></i>
+                                </button>
+                            </div>
+                            <div id="nerd-mode-toggle-wrap" style="display:flex;align-items:center;justify-content:space-between;">
+                                <label class="text-sm font-medium text-gray-300" data-translate="nerd-mode-label">nerd mode</label>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="nerd-mode-toggle">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="settings-section" open>
+                        <summary class="settings-section-header">
+                            <i class="fas fa-map-location-dot settings-section-icon"></i>
+                            <div class="settings-section-header-text">
+                                <div class="settings-section-title" data-translate="settings-section-game-locations">game locations</div>
+                                <div class="settings-section-subtitle" data-translate="settings-section-game-locations-subtitle">where mods get installed</div>
+                            </div>
+                            <i class="fas fa-chevron-right settings-section-chevron"></i>
+                        </summary>
+                        <div class="settings-section-body">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-300 mb-2" data-translate="game-locations-label">game install locations (mods are installed to ALL of these):</label>
+                                <div id="deploy-targets-list" class="space-y-2 mb-3"></div>
+                                <p id="no-deploy-targets-message" class="text-gray-400 text-sm mb-3" style="display:none;" data-translate="no-deploy-targets-message">no game install locations yet. click auto-detect, or add one manually.</p>
+                                <div class="flex gap-4 flex-wrap items-center">
+                                    <button id="auto-detect-targets-btn" class="font-semibold py-2 px-4 rounded-md transition duration-200" style="border: 1px solid var(--accent-color);"><i class="fas fa-search mr-2"></i> <span data-translate="auto-detect-button">auto-detect</span></button>
+                                    <select id="manual-target-platform" class="p-3 rounded-md">
+                                        <option value="Steam" data-translate="platform-steam">steam</option>
+                                        <option value="Microsoft" data-translate="platform-microsoft">microsoft</option>
+                                        <option value="Epic Games" data-translate="platform-epic">epic games</option>
+                                    </select>
+                                    <button id="add-manual-target-btn" class="font-semibold py-2 px-4 rounded-md transition duration-200" style="border: 1px solid var(--accent-color);"><i class="fas fa-folder-plus mr-2"></i> <span data-translate="add-manually-button">add manually</span></button>
+                                </div>
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="settings-section">
+                        <summary class="settings-section-header">
+                            <i class="fas fa-play settings-section-icon"></i>
+                            <div class="settings-section-header-text">
+                                <div class="settings-section-title" data-translate="settings-section-game-launch-override">game launch overrides</div>
+                                <div class="settings-section-subtitle" data-translate="settings-section-game-launch-override-subtitle">only needed if "launch game" opens the wrong thing or fails</div>
+                            </div>
+                            <i class="fas fa-chevron-right settings-section-chevron"></i>
+                        </summary>
+                        <div class="settings-section-body">
+                            <div>
+                                <div class="settings-subrow" style="margin-top:0;padding-top:0;border-top:none;">
+                                    <span class="settings-subrow-label" data-translate="platform-steam">steam</span>
+                                    <div class="settings-row-flex">
+                                        <input type="text" id="game-launch-path-steam" class="p-3 rounded-md" readonly placeholder="default: launched via the Steam client (steam://rungameid/381210)" data-translate-placeholder="game-launch-steam-placeholder">
+                                        <button id="select-game-launch-steam" class="font-semibold py-2 px-4 rounded-md transition duration-200" style="border: 1px solid var(--accent-color);"><i class="fas fa-file-import mr-2"></i> <span data-translate="browse-button">browse</span></button>
+                                    </div>
+                                </div>
+                                <div class="settings-subrow">
+                                    <span class="settings-subrow-label" data-translate="platform-epic">epic games</span>
+                                    <div class="settings-row-flex">
+                                        <input type="text" id="game-launch-path-epic-games" class="p-3 rounded-md" readonly placeholder="default: auto-detected from the epic games install location above" data-translate-placeholder="game-launch-epic-placeholder">
+                                        <button id="select-game-launch-epic-games" class="font-semibold py-2 px-4 rounded-md transition duration-200" style="border: 1px solid var(--accent-color);"><i class="fas fa-file-import mr-2"></i> <span data-translate="browse-button">browse</span></button>
+                                    </div>
+                                    <p class="settings-hint" data-translate="game-launch-epic-hint">pick "DeadByDaylight.exe" in the root of the install folder — not the one inside DeadByDaylight\Binaries\Win64.</p>
+                                </div>
+                                <div class="settings-subrow">
+                                    <span class="settings-subrow-label" data-translate="subrow-microsoft-label">microsoft (xbox / game pass)</span>
+                                    <div class="settings-row-flex">
+                                        <input type="text" id="game-launch-path-microsoft" class="p-3 rounded-md" readonly placeholder="default: auto-detected from the microsoft install location above" data-translate-placeholder="game-launch-microsoft-placeholder">
+                                        <button id="select-game-launch-microsoft" class="font-semibold py-2 px-4 rounded-md transition duration-200" style="border: 1px solid var(--accent-color);"><i class="fas fa-file-import mr-2"></i> <span data-translate="browse-button">browse</span></button>
+                                    </div>
+                                    <p class="settings-hint" data-translate="game-launch-microsoft-hint">pick "gamelaunchhelper.exe" directly inside the install's Content folder — the shipping exe won't launch on its own since this is a packaged Store app.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="settings-section">
+                        <summary class="settings-section-header">
+                            <i class="fas fa-toolbox settings-section-icon"></i>
+                            <div class="settings-section-header-text">
+                                <div class="settings-section-title" data-translate="settings-section-trainer-spoofer">tools</div>
+                                <div class="settings-section-subtitle" data-translate="settings-section-trainer-spoofer-subtitle">folder paths — the exe inside each folder is launched directly</div>
+                            </div>
+                            <i class="fas fa-chevron-right settings-section-chevron"></i>
+                        </summary>
+                        <div class="settings-section-body">
+                            <div>
+                                <label for="trainer-folder-path" class="block text-sm font-medium text-gray-300 mb-2" data-translate="trainer-folder-path-label">trainer folder (Visenya X):</label>
+                                <div class="settings-row-flex">
+                                    <input type="text" id="trainer-folder-path" class="p-3 rounded-md" readonly>
+                                    <button id="select-trainer-folder" class="font-semibold py-2 px-4 rounded-md transition duration-200" style="border: 1px solid var(--accent-color);"><i class="fas fa-folder-open mr-2"></i> <span data-translate="browse-button">browse</span></button>
+                                </div>
+                                <p class="settings-hint" data-translate="trainer-folder-hint">folder containing the trainer's .exe. Only Visenya has a trainer — leave this empty and the trainer button won't show up.</p>
+                            </div>
+                            <div>
+                                <label for="spoofer-folder-path" class="block text-sm font-medium text-gray-300 mb-2" data-translate="spoofer-folder-path-label">spoofer folder:</label>
+                                <div class="settings-row-flex">
+                                    <input type="text" id="spoofer-folder-path" class="p-3 rounded-md" readonly>
+                                    <button id="select-spoofer-folder" class="font-semibold py-2 px-4 rounded-md transition duration-200" style="border: 1px solid var(--accent-color);"><i class="fas fa-folder-open mr-2"></i> <span data-translate="browse-button">browse</span></button>
+                                </div>
+                                <p class="settings-hint" data-translate="spoofer-folder-hint">folder containing the spoofer's .exe — point this at either your Visenya S folder or your Nyxia spoofer folder, whichever you use.</p>
+                            </div>
+                            <div>
+                                <label for="pakbypass-folder-path" class="block text-sm font-medium text-gray-300 mb-2" data-translate="pakbypass-folder-path-label">pak bypass folder (Nyxia):</label>
+                                <div class="settings-row-flex">
+                                    <input type="text" id="pakbypass-folder-path" class="p-3 rounded-md" readonly>
+                                    <button id="select-pakbypass-folder" class="font-semibold py-2 px-4 rounded-md transition duration-200" style="border: 1px solid var(--accent-color);"><i class="fas fa-folder-open mr-2"></i> <span data-translate="browse-button">browse</span></button>
+                                </div>
+                                <p class="settings-hint" data-translate="pakbypass-folder-hint">folder containing Nyxia's pak bypass .exe.</p>
+                            </div>
+                            <div>
+                                <label for="unlocker-folder-path" class="block text-sm font-medium text-gray-300 mb-2" data-translate="unlocker-folder-path-label">unlocker folder (Nyxia):</label>
+                                <div class="settings-row-flex">
+                                    <input type="text" id="unlocker-folder-path" class="p-3 rounded-md" readonly>
+                                    <button id="select-unlocker-folder" class="font-semibold py-2 px-4 rounded-md transition duration-200" style="border: 1px solid var(--accent-color);"><i class="fas fa-folder-open mr-2"></i> <span data-translate="browse-button">browse</span></button>
+                                </div>
+                                <p class="settings-hint" data-translate="unlocker-folder-hint">folder containing Nyxia's unlocker .exe.</p>
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="settings-section">
+                        <summary class="settings-section-header">
+                            <i class="fas fa-palette settings-section-icon"></i>
+                            <div class="settings-section-header-text">
+                                <div class="settings-section-title glow-target" data-translate="settings-section-appearance">appearance</div>
+                                <div class="settings-section-subtitle" data-translate="settings-section-appearance-subtitle">colors</div>
+                            </div>
+                            <i class="fas fa-chevron-right settings-section-chevron"></i>
+                        </summary>
+                        <div class="settings-section-body">
+                            <div>
+                                <div style="display:flex;justify-content:flex-end;margin-bottom:1rem;">
+                                    <button id="reset-theme-button" class="font-semibold py-2 px-4 rounded-md transition duration-200" style="border: 1px solid var(--accent-color);"><i class="fas fa-undo mr-2"></i> <span data-translate="reset-theme-button">reset to default</span></button>
+                                </div>
+                                <div id="theme-color-grid" class="color-swatch-row">
+                                    <div class="color-swatch-item">
+                                        <label for="theme-color-accent" data-translate="color-accent">accent</label>
+                                        <input type="color" id="theme-color-accent" data-theme-key="accent">
+                                    </div>
+                                    <div class="color-swatch-item">
+                                        <label for="theme-color-hover" data-translate="color-hover">hover</label>
+                                        <input type="color" id="theme-color-hover" data-theme-key="hover">
+                                    </div>
+                                    <div class="color-swatch-item">
+                                        <label for="theme-color-background" data-translate="color-background">background</label>
+                                        <input type="color" id="theme-color-background" data-theme-key="background">
+                                    </div>
+                                    <div class="color-swatch-item">
+                                        <label for="theme-color-sidebar" data-translate="color-sidebar">sidebar</label>
+                                        <input type="color" id="theme-color-sidebar" data-theme-key="sidebar">
+                                    </div>
+                                    <div class="color-swatch-item">
+                                        <label for="theme-color-text" data-translate="color-text">text</label>
+                                        <input type="color" id="theme-color-text" data-theme-key="text">
+                                    </div>
+                                    <div class="color-swatch-item">
+                                        <label for="theme-color-modCardOn" data-translate="color-mod-cards-on">mod cards (on)</label>
+                                        <input type="color" id="theme-color-modCardOn" data-theme-key="modCardOn">
+                                    </div>
+                                    <div class="color-swatch-item">
+                                        <label for="theme-color-modCardOff" data-translate="color-mod-cards-off">mod cards (off)</label>
+                                        <input type="color" id="theme-color-modCardOff" data-theme-key="modCardOff">
+                                    </div>
+                                </div>
+                                <div class="color-swatch-row" style="margin-top:1.25rem;">
+                                    <div class="color-swatch-item">
+                                        <label for="theme-color-border" data-translate="color-borders">borders</label>
+                                        <input type="color" id="theme-color-border" data-theme-key="border">
+                                    </div>
+                                    <div class="color-swatch-item">
+                                        <label for="theme-color-titleBar" data-translate="color-title-bar">title bar</label>
+                                        <input type="color" id="theme-color-titleBar" data-theme-key="titleBar">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="settings-section">
+                        <summary class="settings-section-header">
+                            <i class="fas fa-table-columns settings-section-icon"></i>
+                            <div class="settings-section-header-text">
+                                <div class="settings-section-title glow-target" data-translate="settings-section-layout">layout</div>
+                                <div class="settings-section-subtitle" data-translate="settings-section-layout-subtitle">font size, glow, mod numbers</div>
+                            </div>
+                            <i class="fas fa-chevron-right settings-section-chevron"></i>
+                        </summary>
+                        <div class="settings-section-body">
+                            <div class="layout-option-row">
+                                <span style="color:var(--secondary-text-dark);" data-translate="font-size-label">font size</span>
+                                <div style="display:flex;align-items:center;gap:0.6rem;">
+                                    <input type="range" id="font-size-slider" min="12" max="22" step="1" value="16" style="width:160px;accent-color:var(--accent-color);">
+                                    <span id="font-size-value" style="color:var(--secondary-text-dark);font-size:0.85rem;min-width:2.5em;text-align:right;">16px</span>
+                                </div>
+                            </div>
+                            <div class="layout-option-row">
+                                <span style="color:var(--secondary-text-dark);" data-translate="text-glow-label">text glow</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="text-glow-toggle">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="layout-option-row" id="glow-intensity-row" style="display:none;">
+                                <span style="color:var(--secondary-text-dark);" data-translate="glow-intensity-label">glow intensity</span>
+                                <div style="display:flex;align-items:center;gap:0.6rem;">
+                                    <input type="range" id="glow-intensity-slider" min="0" max="100" value="45" style="width:140px;accent-color:var(--accent-color);">
+                                    <span id="glow-intensity-value" style="color:var(--secondary-text-dark);font-size:0.85rem;min-width:2.2em;text-align:right;">45%</span>
+                                </div>
+                            </div>
+                            <div class="layout-option-row" id="glow-color-row" style="display:none;">
+                                <span style="color:var(--secondary-text-dark);" data-translate="glow-color-label">glow color</span>
+                                <input type="color" id="glow-color-picker" value="#bb86fc">
+                            </div>
+                            <div class="layout-option-row" style="margin-bottom:0;">
+                                <span style="color:var(--secondary-text-dark);" data-translate="show-mod-numbers-label">show mod numbers</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="show-mod-numbers-toggle" checked>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="settings-section" style="border-color:color-mix(in srgb, #e0555f 45%, var(--border-color-dark));">
+                        <summary class="settings-section-header">
+                            <i class="fas fa-triangle-exclamation settings-section-icon" style="color:#e0555f;"></i>
+                            <div class="settings-section-header-text">
+                                <div class="settings-section-title" data-translate="settings-section-danger-zone">danger zone</div>
+                            </div>
+                            <i class="fas fa-chevron-right settings-section-chevron"></i>
+                        </summary>
+                        <div class="settings-section-body">
+                            <div>
+                                <button id="uninstall-all-mods-button" class="font-bold py-3 px-6 rounded-lg shadow-lg transition duration-200 ease-in-out transform hover:-translate-y-1" style="border: 1px solid #e0555f; color:#e0555f;"><i class="fas fa-trash-alt mr-2"></i> uninstall all mods</button>
+                            </div>
+                        </div>
+                    </details>
+
+                </div>
+            </div>
+            <!-- console tab -->
+            <div id="console-tab" class="tab-content console-tab-flex">
+                <div class="flex justify-between items-center mb-4" style="flex-shrink:0;">
+                    <h2 class="text-3xl font-bold text-white" data-translate="console-title">console output</h2>
+                    <div id="console-toolbar">
+                        <div class="console-toolbar-group">
+                            <button id="export-log-button" class="font-semibold py-2 px-3 rounded-md transition duration-200" style="border: 1px solid var(--accent-color);" title="Export log"><i class="fas fa-file-export"></i></button>
+                            <button id="copy-log-button" class="font-semibold py-2 px-3 rounded-md transition duration-200" style="border: 1px solid var(--accent-color);" title="Copy all"><i class="fas fa-copy"></i></button>
+                            <button id="clear-log-button" class="font-semibold py-2 px-3 rounded-md transition duration-200" style="border: 1px solid var(--accent-color);" title="Clear log"><i class="fas fa-eraser"></i></button>
+                        </div>
+                        <div id="console-toolbar-divider"></div>
+                        <div class="console-toolbar-group">
+                            <button id="show-all-log-button" class="console-filter-btn active-filter" data-translate="show-all-log-button">show all</button>
+                            <button id="show-warnings-button" class="console-filter-btn" data-translate="show-warnings-button">warnings</button>
+                            <button id="show-errors-button" class="console-filter-btn" data-translate="show-errors-button">errors</button>
+                        </div>
+                    </div>
+                </div>
+                <div id="console-output" class="bg-surface-color-dark p-4 rounded-lg border border-border-color-dark text-sm" style="flex:1 1 0%; min-height:0; overflow-y:auto;"></div>
+            </div>
+        </div>
+    </div>
+    <!-- modals -->
+    <div id="confirmation-modal" class="modal-overlay hidden"><div class="modal-content"><div class="modal-header"><h2 id="confirmation-modal-title"></h2><button class="modal-close-button" onclick="hideModal('confirmation-modal')">&times;</button></div><div class="modal-body"><p id="confirmation-modal-message"></p></div><div class="modal-footer"><button id="confirmation-modal-cancel" class="modal-button modal-button-secondary" data-translate="no-button">no</button><button id="confirmation-modal-confirm" class="modal-button modal-button-primary" data-translate="yes-button">yes</button></div></div></div>
+    <div id="rename-modal" class="modal-overlay hidden"><div class="modal-content"><div class="modal-header"><h2 data-translate="rename-modal-title">Rename Mod</h2><button class="modal-close-button" onclick="hideModal('rename-modal')">&times;</button></div><div class="modal-body"><p style="color:var(--secondary-text-dark);font-size:0.85rem;margin-bottom:0.5rem;" data-translate="rename-modal-hint">Display name only — the file on disk is unchanged.</p><input type="text" id="rename-modal-input" style="width:100%;padding:0.6rem 0.75rem;border-radius:0.4rem;border:1px solid var(--border-color-dark);background-color:var(--surface-color-dark);color:var(--primary-text-dark);"></div><div class="modal-footer"><button id="rename-modal-cancel" class="modal-button modal-button-secondary" data-translate="cancel-button">cancel</button><button id="rename-modal-confirm" class="modal-button modal-button-primary" data-translate="save-button">save</button></div></div></div>
+    <div id="mod-selection-modal" class="modal-overlay hidden"><div class="modal-content modal-wide"><div class="modal-header"><h2 data-translate="select-mods-title"></h2><button class="modal-close-button" onclick="hideModal('mod-selection-modal')">&times;</button></div><div class="modal-body"><input type="text" id="available-mods-search" placeholder="search mods by name or author..." data-translate-placeholder="search-mods-placeholder" style="width:100%;padding:0.6rem 0.75rem;margin-bottom:0.75rem;border-radius:0.4rem;border:1px solid var(--border-color-dark);background-color:var(--surface-color-dark);color:var(--primary-text-dark);"><div id="available-mods-list" class="space-y-2 max-h-80 overflow-y-auto"></div><p class="text-gray-400 text-center" id="no-available-mods-message" style="display: none;"></p></div><div class="modal-footer"><button class="modal-button modal-button-primary" onclick="hideModal('mod-selection-modal')" data-translate="close-button">close</button></div></div></div>
+    <div id="archived-mods-modal" class="modal-overlay hidden"><div class="modal-content modal-wide"><div class="modal-header"><h2 data-translate="archived-modal-title">Archived Mods</h2><button class="modal-close-button" onclick="hideModal('archived-mods-modal')">&times;</button></div><div class="modal-body"><p style="color:var(--secondary-text-dark);font-size:0.85rem;margin-bottom:0.75rem;" data-translate="archived-modal-hint">These are hidden from Install Mods but still sitting in your mods folder. Restore one to bring it back, or delete it permanently.</p><div id="archived-mods-list" class="space-y-2 max-h-96 overflow-y-auto"></div><p class="text-gray-400 text-center" id="no-archived-mods-message" style="display:none;" data-translate="no-archived-mods-message">nothing archived yet.</p></div><div class="modal-footer"><button class="modal-button modal-button-primary" onclick="hideModal('archived-mods-modal')" data-translate="close-button">close</button></div></div></div>
+    <div id="message-modal" class="modal-overlay hidden"><div class="modal-content"><div class="modal-header"><h2 id="message-modal-title"></h2><button class="modal-close-button" onclick="hideModal('message-modal')">&times;</button></div><div class="modal-body"><p id="message-modal-message"></p></div><div class="modal-footer"><button class="modal-button modal-button-primary" onclick="hideModal('message-modal')" data-translate="ok-button">ok</button></div></div></div>
+    <div id="language-selection-modal" class="modal-overlay hidden"><div class="modal-content"><div class="modal-header"><h2 data-translate="select-language-title"></h2><button class="modal-close-button" onclick="hideModal('language-selection-modal')">&times;</button></div><div class="modal-body"><div class="space-y-2"><div class="language-option" data-lang="English"><img src="https://flagcdn.com/w20/us.png" alt="english flag"> english</div><div class="language-option" data-lang="Russian"><img src="https://flagcdn.com/w20/ru.png" alt="russian flag"> русский</div><div class="language-option" data-lang="German"><img src="https://flagcdn.com/w20/de.png" alt="german flag"> deutsch</div><div class="language-option" data-lang="Spanish"><img src="https://flagcdn.com/w20/es.png" alt="spanish flag"> español</div><div class="language-option" data-lang="Chinese"><img src="https://flagcdn.com/w20/cn.png" alt="chinese flag"> 中文</div></div></div><div class="modal-footer"><button class="modal-button modal-button-primary" onclick="hideModal('language-selection-modal')" data-translate="close-button">close</button></div></div></div>
+    <div id="progress-modal" class="modal-overlay hidden"><div class="modal-content"><div class="modal-header"><h2 data-translate="progress-modal-title">progress</h2></div><div class="modal-body"><p id="progress-text"></p><div class="w-full bg-gray-700 rounded-full h-2.5"><div id="progress-bar" class="bg-accent-color h-2.5 rounded-full" style="width: 0%"></div></div></div></div></div>
+    <script src="renderer.js"></script>
+</body>
+</html>

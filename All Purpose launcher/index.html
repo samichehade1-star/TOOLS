@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; media-src 'self'; img-src 'self' data: https://*.steamstatic.com https://*.akamaihd.net" />
+<title>LaunchPad X</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="bg-fx" aria-hidden="true">
+    <div class="blob blob-a"></div>
+    <div class="blob blob-b"></div>
+    <div class="blob blob-c"></div>
+    <div class="grain"></div>
+  </div>
+
+  <div id="splash-overlay" class="splash-overlay">
+    <div class="splash-video-frame">
+      <video id="splash-video" class="splash-video" muted playsinline></video>
+    </div>
+
+    <div id="splash-fallback" class="splash-fallback" style="display:none;">
+      <div class="splash-stage">
+        <div class="splash-spark"></div>
+        <div class="splash-trail"></div>
+        <svg class="splash-mark-svg" viewBox="0 0 200 200">
+          <defs>
+            <linearGradient id="splashXGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#8b5cf6"/>
+              <stop offset="100%" stop-color="#38bdf8"/>
+            </linearGradient>
+          </defs>
+          <path class="splash-bar splash-bar-a" d="M35,170 L165,35" stroke="url(#splashXGrad)" stroke-width="30" stroke-linecap="round" fill="none"/>
+          <path class="splash-bar splash-bar-b" d="M35,35 L165,170" stroke="url(#splashXGrad)" stroke-width="30" stroke-linecap="round" fill="none"/>
+          <circle class="splash-spark-dot" cx="165" cy="35" r="10" fill="#ffffff"/>
+        </svg>
+      </div>
+      <div class="splash-title">LAUNCHPAD X</div>
+      <div class="splash-credit">by Sami</div>
+    </div>
+
+    <button id="splash-skip" class="splash-skip">Skip ⏭</button>
+  </div>
+
+  <div class="app-shell">
+    <header class="titlebar">
+      <div class="titlebar-drag">
+        <div class="brand">
+          <span class="brand-name">LaunchPad X</span>
+          <span class="brand-credit">by Sami</span>
+        </div>
+      </div>
+      <div class="titlebar-controls">
+        <button id="btn-min" class="win-btn" title="Minimize"><svg viewBox="0 0 10 10"><rect x="1" y="4.5" width="8" height="1" fill="currentColor"/></svg></button>
+        <button id="btn-max" class="win-btn" title="Maximize"><svg viewBox="0 0 10 10"><rect x="1.5" y="1.5" width="7" height="7" fill="none" stroke="currentColor" stroke-width="1"/></svg></button>
+        <button id="btn-close" class="win-btn win-btn-close" title="Close"><svg viewBox="0 0 10 10"><line x1="1" y1="1" x2="9" y2="9" stroke="currentColor" stroke-width="1.2"/><line x1="9" y1="1" x2="1" y2="9" stroke="currentColor" stroke-width="1.2"/></svg></button>
+      </div>
+    </header>
+
+    <div class="float-dock">
+      <button class="dock-btn active" data-view="library" data-tip="Library"><span>🎮</span></button>
+      <div class="dock-sep"></div>
+      <button class="dock-btn" id="console-toggle" data-tip="Console"><span>🖥️</span></button>
+      <button class="dock-btn theme-fab" id="btn-theme-fab" data-tip="Appearance"><span>🎨</span></button>
+    </div>
+
+    <div class="body-row">
+      <main class="content">
+        <section id="view-library" class="view active">
+          <div class="view-head">
+            <div class="view-head-titles">
+              <h1>Library</h1>
+              <p class="subtle">Pick a game to launch it — or open its tools.</p>
+            </div>
+            <div class="view-head-actions">
+              <input type="text" id="library-search" class="field library-search" placeholder="🔎 Search your library…" />
+              <button id="btn-scan-games" class="btn btn-small">🔍 Scan &amp; Import</button>
+              <button id="btn-add-app" class="btn btn-small">+ Add Custom Tool</button>
+              <button id="btn-add-game" class="btn btn-primary btn-small">+ Add Game</button>
+            </div>
+          </div>
+          <div id="game-grid" class="game-grid"></div>
+          <div id="library-empty-hint" class="empty-tools-hint" style="display:none;">No games match your search.</div>
+
+          <div id="hidden-games-block" class="unassigned-block" style="display:none;">
+            <h3>Hidden (<span id="hidden-games-count">0</span>)</h3>
+            <div id="hidden-games-grid" class="game-grid"></div>
+          </div>
+
+          <div id="unassigned-block" class="unassigned-block" style="display:none;">
+            <h3>Not linked to a game yet</h3>
+            <div id="unassigned-cards" class="group-cards"></div>
+          </div>
+
+          <div id="unassigned-hidden-block" class="unassigned-block" style="display:none;">
+            <h3>Hidden, not linked to a game (<span id="unassigned-hidden-count">0</span>)</h3>
+            <div id="unassigned-hidden-cards" class="group-cards"></div>
+          </div>
+        </section>
+
+        <section id="view-game-detail" class="view">
+          <button id="btn-back-to-library" class="link-btn back-link">← Back to Library</button>
+          <div id="game-hero" class="game-hero">
+            <div class="game-hero-bg"></div>
+            <div class="game-hero-content">
+              <span class="game-hero-badge"></span>
+              <h1 class="game-hero-title"></h1>
+              <div class="game-hero-actions">
+                <button id="btn-launch-game" class="btn btn-launch-game">▶ Launch Game</button>
+                <button id="btn-edit-game" class="btn btn-ghost" title="Edit game">✎ Edit</button>
+                <button id="btn-delete-game" class="btn btn-ghost btn-danger-ghost" title="Delete game">🗑 Delete</button>
+              </div>
+              <div id="game-hero-status" class="card-status"></div>
+            </div>
+          </div>
+
+          <div class="tools-head">
+            <h3>Tools</h3>
+            <button id="btn-add-tool" class="btn btn-primary btn-small">+ Add Tool</button>
+          </div>
+          <div id="game-tools" class="groups"></div>
+
+          <div id="hidden-tools-block" class="unassigned-block" style="display:none;">
+            <h3>Hidden tools (<span id="hidden-tools-count">0</span>)</h3>
+            <div id="hidden-tools-cards" class="group-cards"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="console-drawer" class="console-drawer">
+      <div class="console-head">
+        <span>Console</span>
+        <button id="console-close" class="link-btn">close</button>
+      </div>
+      <div id="console-log" class="console-log"></div>
+    </div>
+  </div>
+
+  <datalist id="category-datalist"></datalist>
+
+  <div id="theme-modal-overlay" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>🎨 Appearance</h3>
+        <button id="theme-modal-close" class="link-btn">✕ Close</button>
+      </div>
+      <div class="modal-body">
+        <div class="theme-presets" id="theme-presets"></div>
+        <div class="color-row">
+          <label>Accent A
+            <input type="color" id="c-accent" />
+          </label>
+          <label>Accent B
+            <input type="color" id="c-accent2" />
+          </label>
+          <label>Background start
+            <input type="color" id="c-bgfrom" />
+          </label>
+          <label>Background end
+            <input type="color" id="c-bgto" />
+          </label>
+        </div>
+        <div class="slider-row">
+          <label for="c-opacity">Card glass opacity</label>
+          <input type="range" id="c-opacity" min="0.2" max="0.9" step="0.05" />
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="scan-modal-overlay" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>🔍 Scan &amp; Import Games</h3>
+        <button id="scan-modal-close" class="link-btn">✕ Close</button>
+      </div>
+      <p class="modal-subtle">Checking your Steam, Epic Games, and Xbox libraries for installed games not already in your Library.</p>
+      <div id="scan-modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="add-tool-modal-overlay" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>+ Add Tool to <span id="add-tool-game-name"></span></h3>
+        <button id="add-tool-modal-close" class="link-btn">✕ Close</button>
+      </div>
+      <p class="modal-subtle">Reuse a tool you've already set up elsewhere, or start a fresh one just for this game.</p>
+      <button id="btn-create-new-tool" class="btn btn-primary" style="width:100%; margin-top:12px;">✨ Create a new tool for this game</button>
+      <div class="modal-divider"><span>or reuse an existing tool</span></div>
+      <div id="add-tool-existing-list" class="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="edit-game-modal-overlay" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>Edit Game</h3>
+        <button id="edit-game-modal-close" class="link-btn">✕ Close</button>
+      </div>
+      <div id="edit-game-modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <div id="edit-tool-modal-overlay" class="modal-overlay" style="display:none;">
+    <div class="modal-box">
+      <div class="modal-head">
+        <h3>Edit Tool</h3>
+        <button id="edit-tool-modal-close" class="link-btn">✕ Close</button>
+      </div>
+      <div id="edit-tool-modal-body" class="modal-body"></div>
+    </div>
+  </div>
+
+  <template id="tpl-game-card">
+    <article class="game-card" draggable="true">
+      <div class="game-card-cover">
+        <img class="game-card-img" alt="" />
+        <div class="game-card-fallback-icon"></div>
+      </div>
+      <div class="game-card-scrim"></div>
+      <button class="game-card-hide" title="Hide from Library">👁</button>
+      <button class="game-card-delete" title="Delete game">🗑</button>
+      <div class="game-card-info">
+        <span class="game-card-platform"></span>
+        <div class="game-card-title"></div>
+        <div class="game-card-toolcount"></div>
+      </div>
+    </article>
+  </template>
+
+  <template id="tpl-card">
+    <article class="card" draggable="true">
+      <div class="card-glow"></div>
+      <div class="card-top">
+        <div class="card-titles">
+          <div class="card-name"></div>
+          <div class="card-group"></div>
+        </div>
+        <button class="card-edit" title="Edit">✎</button>
+      </div>
+      <div class="card-status"></div>
+      <div class="card-actions">
+        <button class="btn btn-launch">Launch</button>
+        <button class="btn btn-cancel" title="Cancel retry">Cancel</button>
+      </div>
+    </article>
+  </template>
+
+  <template id="tpl-game-row">
+    <div class="app-row">
+      <div class="app-row-head">
+        <span class="app-row-thumb"><img class="g-thumb-img" alt="" /></span>
+        <input class="app-row-name field" type="text" />
+        <span class="app-row-badge"></span>
+        <button class="app-row-hide link-btn" title="Hide from Library">hide</button>
+        <button class="app-row-delete link-btn danger">delete</button>
+      </div>
+      <div class="app-row-body">
+        <div class="field-grid">
+          <label>Cover Image
+            <div class="path-picker">
+              <button type="button" class="btn btn-small g-cover-pick">Choose image…</button>
+              <button type="button" class="btn btn-small g-cover-steam">Use Steam art</button>
+            </div>
+          </label>
+          <label class="g-cover-find-label">Can't find art?
+            <div class="path-picker">
+              <button type="button" class="btn btn-small g-cover-find">🌐 Find cover online</button>
+            </div>
+          </label>
+          <label>Platform
+            <select class="g-platform field">
+              <option value="Steam">Steam</option>
+              <option value="Epic Games">Epic Games</option>
+              <option value="Ubisoft">Ubisoft Connect</option>
+              <option value="Roblox">Roblox</option>
+              <option value="Microsoft">Microsoft / Xbox</option>
+              <option value="Other">Other</option>
+            </select>
+          </label>
+          <label class="g-steamid-label">Steam App ID
+            <input type="text" class="g-steamid field" placeholder="e.g. 381210" />
+          </label>
+          <label class="g-epicname-label">Epic App Name
+            <input type="text" class="g-epicname field" placeholder="e.g. Anthem" />
+          </label>
+          <label class="g-ubisoftid-label">Ubisoft Game ID
+            <input type="text" class="g-ubisoftid field" placeholder="e.g. 1221" />
+          </label>
+          <label class="g-exe-label">Game executable
+            <div class="path-picker">
+              <input type="text" class="g-exe field" readonly />
+              <button type="button" class="btn btn-small g-exe-browse">Browse…</button>
+            </div>
+          </label>
+          <div class="g-roblox-note field-note" style="display:none;">✓ Auto-detected — Roblox's launcher is found fresh every time you click Launch, so it keeps working across Roblox's own updates. Nothing to configure here.</div>
+        </div>
+        <div class="cover-find-status"></div>
+      </div>
+    </div>
+  </template>
+
+  <template id="tpl-scan-result-row">
+    <div class="scan-result-row">
+      <span class="sr-platform"></span>
+      <span class="sr-name"></span>
+      <button type="button" class="btn btn-small sr-add">+ Add</button>
+    </div>
+  </template>
+
+  <template id="tpl-existing-tool-row">
+    <div class="scan-result-row">
+      <span class="sr-platform et-group"></span>
+      <span class="sr-name et-name"></span>
+      <span class="et-source"></span>
+      <button type="button" class="btn btn-small et-add">+ Add</button>
+    </div>
+  </template>
+
+  <template id="tpl-app-row">
+    <div class="app-row">
+      <div class="app-row-head">
+        <input class="app-row-name field" type="text" />
+        <span class="app-row-badge"></span>
+        <button class="app-row-hide link-btn" title="Hide from Library">hide</button>
+        <button class="app-row-duplicate link-btn" title="Duplicate this tool to attach to another game">duplicate</button>
+        <button class="app-row-delete link-btn danger">delete</button>
+      </div>
+      <div class="app-row-body">
+
+        <div class="row-preview">
+          <span class="row-preview-tag">Live preview</span>
+          <article class="mini-card">
+            <div class="mini-card-texts">
+              <div class="mini-card-name"></div>
+              <div class="mini-card-method"></div>
+            </div>
+            <div class="mini-card-btn">Launch</div>
+          </article>
+        </div>
+
+        <div class="section-head">
+          <span class="section-num">1</span>
+          <span>Basics</span>
+        </div>
+        <div class="field-grid">
+          <label>Color
+            <input type="color" class="f-color" />
+          </label>
+          <label>
+            <span class="label-with-tip">Category<span class="info-dot" tabindex="0" data-tip="Clusters this tool with others of the same kit on the game's page — e.g. all FMP tools sit together, all Nyxia tools sit together. Pick an existing one from the list or type a new name.">ⓘ</span></span>
+            <input type="text" class="f-group field" list="category-datalist" placeholder="e.g. FMP" />
+          </label>
+        </div>
+
+        <div class="section-head">
+          <span class="section-num">2</span>
+          <span>Where's the tool</span>
+          <span class="info-dot" tabindex="0" data-tip="Works with .exe, .bat, .cmd, .ahk, .vbs, .ps1 or any other file you'd normally just double-click to run. Direct path: point straight at the file. Folder scan: pick a folder — whichever single runnable file is inside gets launched, so it still works if the tool renames itself. Extract + retry: pick a .zip/.7z/.rar — it's re-extracted fresh every launch and auto-retries if it fails to fully start, for launchers whose file changes on every download.">ⓘ</span>
+        </div>
+        <div class="field-grid">
+          <label>Launch Method
+            <select class="f-method field">
+              <option value="direct">Direct path to a file</option>
+              <option value="folder">Run whichever file is in a folder</option>
+              <option value="archive">Extract archive, then run its file</option>
+            </select>
+          </label>
+          <label class="f-path-label">Target
+            <div class="path-picker">
+              <input type="text" class="f-path field" readonly />
+              <button class="btn btn-small f-browse">Browse…</button>
+            </div>
+          </label>
+        </div>
+
+        <div class="section-head">
+          <span class="section-num">3</span>
+          <span>Admin &amp; reliability</span>
+          <span class="info-dot" tabindex="0" data-tip="Not required: launches normally. Prompt every launch: shows the real Windows UAC popup each time — safest when the file path can change. Approve once, silent after: one UAC popup ever, then launches silently forever — best for a fixed file. Auto-retry watches the process for ~15s and relaunches automatically if it dies (common with an online license check), instead of you clicking Launch again.">ⓘ</span>
+        </div>
+        <div class="field-grid">
+          <label>Admin (UAC)
+            <select class="f-elevate field">
+              <option value="none">Not required</option>
+              <option value="prompt">Prompt every launch</option>
+              <option value="silent">Approve once, silent after</option>
+            </select>
+          </label>
+          <label class="checkbox-label standalone">
+            <input type="checkbox" class="f-retry" />
+            Auto-retry until it sticks
+          </label>
+        </div>
+
+        <div class="section-head">
+          <span class="section-num">4</span>
+          <span>Which game</span>
+          <span class="info-dot" tabindex="0" data-tip="Attach this tool to a game in your Library so it shows up on that game's page.">ⓘ</span>
+        </div>
+        <div class="field-grid">
+          <label>Game
+            <select class="f-game-select field">
+              <option value="">— unassigned —</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    </div>
+  </template>
+
+  <script src="renderer.js"></script>
+</body>
+</html>

@@ -1,0 +1,61 @@
+{
+  "name": "diddler",
+  "version": "1.0.0",
+  "description": "Diddler — send and cancel Dead by Daylight friend requests when the in-game system won't cooperate",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build-icons": "node scripts/build-icons.js",
+    "build-engine": "node scripts/build-engine.js",
+    "pack": "npm run build-engine && npm run build-icons && electron-builder --dir",
+    "dist": "npm run build-engine && npm run build-icons && electron-builder"
+  },
+  "author": "sami",
+  "license": "ISC",
+  "allowScripts": {
+    "electron@30.5.1": true
+  },
+  "devDependencies": {
+    "electron": "^30.0.8",
+    "electron-builder": "^24.13.3",
+    "png-to-ico": "^3.0.2",
+    "sharp": "^0.35.3"
+  },
+  "build": {
+    "appId": "com.sami.diddler",
+    "productName": "Diddler",
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "requireAdministrator"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "differentialPackage": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "files": [
+      "**/*",
+      "!extracted/**",
+      "!engine/*.cs",
+      "!engine/*.csproj",
+      "!engine/obj/**",
+      "!engine/bin/**",
+      "!engine/publish/**",
+      "!scripts/**",
+      "!.claude/**",
+      "!DBDFriendRequest.zip",
+      "!diddler_icon_preview.png",
+      "!dist/**"
+    ],
+    "extraResources": [
+      {
+        "from": "engine/publish",
+        "to": "engine"
+      }
+    ]
+  }
+}

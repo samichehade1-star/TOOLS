@@ -1,0 +1,49 @@
+{
+  "name": "launchpad-x",
+  "version": "1.0.0",
+  "description": "LaunchPad X — a universal launch pad for trainers, spoofers, bypasses and unlockers",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "author": "sami",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^30.0.8",
+    "electron-builder": "^24.13.3",
+    "png-to-ico": "^3.0.2",
+    "sharp": "^0.35.3"
+  },
+  "dependencies": {
+    "7zip-bin": "^5.1.1",
+    "adm-zip": "^0.5.16",
+    "fs-extra": "^11.2.0",
+    "node-7z": "^3.0.0",
+    "node-unrar-js": "^2.0.2"
+  },
+  "build": {
+    "appId": "com.sami.launchpadx",
+    "productName": "LaunchPad X",
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "differentialPackage": false
+    },
+    "files": [
+      "**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/7zip-bin/**"
+    ]
+  },
+  "allowScripts": {
+    "electron@30.5.1": true
+  }
+}
