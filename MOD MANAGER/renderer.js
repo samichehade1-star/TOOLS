@@ -1824,6 +1824,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('maximize-button')?.addEventListener('click', () => window.electronAPI.maximizeWindow());
         document.getElementById('close-button')?.addEventListener('click', () => window.electronAPI.closeWindow());
         document.getElementById('discord-button')?.addEventListener('click', () => window.electronAPI.openDiscordInvite());
+        initUpdateChecker();
 
         // Robust event delegation for tab buttons and title bar
         document.getElementById('sidebar')?.addEventListener('click', (e) => {
@@ -2111,6 +2112,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
 
+        // (see initUpdateChecker() at end of file for the "check for updates" button)
+
         // mod profiles: save the current set of enabled mods, load a saved set
         document.getElementById('save-profile-btn')?.addEventListener('click', async () => {
             const input = document.getElementById('new-profile-name');
@@ -2359,3 +2362,56 @@ document.addEventListener('DOMContentLoaded', async () => {
         log(`critical error during initialization: ${error.message}`, 'error');
     }
 });
+
+// --- update checker (settings tab) ---
+function initUpdateChecker() {
+    const button = document.getElementById('check-for-updates-button');
+    const statusText = document.getElementById('update-status-text');
+    const versionLabel = document.getElementById('app-version-label');
+    if (!button || !statusText) return;
+
+    let awaitingRestart = false;
+
+    window.electronAPI.getAppVersion().then((version) => {
+        if (versionLabel) versionLabel.textContent = `version ${version}`;
+    });
+
+    button.addEventListener('click', async () => {
+        if (awaitingRestart) {
+            window.electronAPI.installUpdate();
+            return;
+        }
+        button.disabled = true;
+        statusText.textContent = 'checking for updates...';
+        await window.electronAPI.checkForUpdates();
+    });
+
+    window.electronAPI.onUpdateStatus((data) => {
+        switch (data.status) {
+            case 'checking':
+                statusText.textContent = 'checking for updates...';
+                break;
+            case 'available':
+                statusText.textContent = `update ${data.version} available, downloading...`;
+                window.electronAPI.downloadUpdate();
+                break;
+            case 'not-available':
+                statusText.textContent = 'you are on the latest version.';
+                button.disabled = false;
+                break;
+            case 'downloading':
+                statusText.textContent = `downloading update... ${data.percent}%`;
+                break;
+            case 'downloaded':
+                statusText.textContent = 'update downloaded — click below to restart and install.';
+                button.innerHTML = '<i class="fas fa-rotate mr-2"></i> restart and install update';
+                button.disabled = false;
+                awaitingRestart = true;
+                break;
+            case 'error':
+                statusText.textContent = `update check failed: ${data.message}`;
+                button.disabled = false;
+                break;
+        }
+    });
+}

@@ -225,6 +225,41 @@ el('btnStillHere').addEventListener('click', () => {
 });
 
 // ---------------------------------------------------------------------
+// auto-update
+// ---------------------------------------------------------------------
+let awaitingRestart = false;
+el('btnUpdate').addEventListener('click', async () => {
+  if (awaitingRestart) { window.api.installUpdate(); return; }
+  el('btnUpdate').title = 'Checking for updates...';
+  await window.api.checkForUpdates();
+});
+
+window.api.onUpdateStatus(({ status, version, percent, message }) => {
+  switch (status) {
+    case 'checking':
+      el('btnUpdate').title = 'Checking for updates...';
+      break;
+    case 'available':
+      el('btnUpdate').title = `Update ${version} available, downloading...`;
+      window.api.downloadUpdate();
+      break;
+    case 'not-available':
+      el('btnUpdate').title = 'You are on the latest version';
+      break;
+    case 'downloading':
+      el('btnUpdate').title = `Downloading update... ${percent}%`;
+      break;
+    case 'downloaded':
+      el('btnUpdate').title = 'Update downloaded — click to restart and install';
+      awaitingRestart = true;
+      break;
+    case 'error':
+      el('btnUpdate').title = `Update check failed: ${message}`;
+      break;
+  }
+});
+
+// ---------------------------------------------------------------------
 // init
 // ---------------------------------------------------------------------
 (async () => {

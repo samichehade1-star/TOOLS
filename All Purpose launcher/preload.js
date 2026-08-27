@@ -32,4 +32,10 @@ contextBridge.exposeInMainWorld('api', {
 
     onLog: (cb) => ipcRenderer.on('log-message', (event, payload) => cb(payload)),
     onLaunchProgress: (cb) => ipcRenderer.on('launch-progress', (event, payload) => cb(payload)),
+
+    getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+    checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+    downloadUpdate: () => ipcRenderer.invoke('download-update'),
+    installUpdate: () => ipcRenderer.invoke('install-update'),
+    onUpdateStatus: (cb) => ipcRenderer.on('update-status', (event, payload) => cb(payload)),
 });

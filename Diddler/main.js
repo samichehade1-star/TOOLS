@@ -137,6 +137,38 @@ ipcMain.handle('save-theme', async (event, theme) => {
 ipcMain.handle('read-clipboard', () => clipboard.readText().trim());
 
 // =====================================================================
+// auto-update (electron-updater, GitHub releases)
+// =====================================================================
+const { autoUpdater } = require('electron-updater');
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = false;
+
+function sendUpdateStatus(status, extra = {}) {
+    sendToRenderer('update-status', { status, ...extra });
+}
+
+autoUpdater.on('checking-for-update', () => sendUpdateStatus('checking'));
+autoUpdater.on('update-available', (info) => sendUpdateStatus('available', { version: info.version }));
+autoUpdater.on('update-not-available', () => sendUpdateStatus('not-available'));
+autoUpdater.on('error', (err) => sendUpdateStatus('error', { message: err == null ? 'unknown error' : (err.message || String(err)) }));
+autoUpdater.on('download-progress', (progress) => sendUpdateStatus('downloading', { percent: Math.round(progress.percent) }));
+autoUpdater.on('update-downloaded', () => sendUpdateStatus('downloaded'));
+
+ipcMain.handle('check-for-updates', async () => {
+    try { await autoUpdater.checkForUpdates(); }
+    catch (err) { sendUpdateStatus('error', { message: err.message || String(err) }); }
+});
+
+ipcMain.handle('download-update', async () => {
+    try { await autoUpdater.downloadUpdate(); }
+    catch (err) { sendUpdateStatus('error', { message: err.message || String(err) }); }
+});
+
+ipcMain.handle('install-update', () => autoUpdater.quitAndInstall());
+
+ipcMain.handle('get-app-version', () => app.getVersion());
+
+// =====================================================================
 // engine process — spawned once, talked to over stdio for the app's
 // whole lifetime. Newline-delimited JSON both ways; see engine/Program.cs.
 // =====================================================================

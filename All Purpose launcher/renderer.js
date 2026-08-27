@@ -51,6 +51,30 @@ document.getElementById('console-close').addEventListener('click', () => console
 
 const themeModalOverlay = document.getElementById('theme-modal-overlay');
 document.getElementById('btn-theme-fab').addEventListener('click', () => { themeModalOverlay.style.display = 'flex'; });
+
+let awaitingUpdateRestart = false;
+const btnCheckUpdates = document.getElementById('btn-check-updates');
+btnCheckUpdates.addEventListener('click', async () => {
+  if (awaitingUpdateRestart) { window.api.installUpdate(); return; }
+  btnCheckUpdates.setAttribute('data-tip', 'Checking for updates...');
+  await window.api.checkForUpdates();
+});
+window.api.onUpdateStatus(({ status, version, percent, message }) => {
+  switch (status) {
+    case 'checking': btnCheckUpdates.setAttribute('data-tip', 'Checking for updates...'); break;
+    case 'available':
+      btnCheckUpdates.setAttribute('data-tip', `Update ${version} available, downloading...`);
+      window.api.downloadUpdate();
+      break;
+    case 'not-available': btnCheckUpdates.setAttribute('data-tip', 'You are on the latest version'); break;
+    case 'downloading': btnCheckUpdates.setAttribute('data-tip', `Downloading update... ${percent}%`); break;
+    case 'downloaded':
+      btnCheckUpdates.setAttribute('data-tip', 'Update downloaded — click to restart and install');
+      awaitingUpdateRestart = true;
+      break;
+    case 'error': btnCheckUpdates.setAttribute('data-tip', `Update check failed: ${message}`); break;
+  }
+});
 document.getElementById('theme-modal-close').addEventListener('click', () => { themeModalOverlay.style.display = 'none'; });
 themeModalOverlay.addEventListener('click', (e) => { if (e.target === themeModalOverlay) themeModalOverlay.style.display = 'none'; });
 

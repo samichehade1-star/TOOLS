@@ -351,6 +351,22 @@ async function createVariantZip(sourceFilePath, variantFolder, destZipName) {
 // --- application details ---
 const APP_VERSION = app.getVersion(); // pulled from package.json, was hardcoded empty before
 const https = require('https');
+const { autoUpdater } = require('electron-updater');
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = false;
+
+function sendUpdateStatus(status, extra = {}) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update-status', { status, ...extra });
+    }
+}
+
+autoUpdater.on('checking-for-update', () => sendUpdateStatus('checking'));
+autoUpdater.on('update-available', (info) => sendUpdateStatus('available', { version: info.version }));
+autoUpdater.on('update-not-available', () => sendUpdateStatus('not-available'));
+autoUpdater.on('error', (err) => sendUpdateStatus('error', { message: err == null ? 'unknown error' : (err.message || String(err)) }));
+autoUpdater.on('download-progress', (progress) => sendUpdateStatus('downloading', { percent: Math.round(progress.percent) }));
+autoUpdater.on('update-downloaded', () => sendUpdateStatus('downloaded'));
 
 
 // --- paths ---
@@ -985,6 +1001,28 @@ ipcMain.on('close-window', () => {
     }
 });
 
+
+ipcMain.handle('check-for-updates', async () => {
+    try {
+        await autoUpdater.checkForUpdates();
+    } catch (err) {
+        sendUpdateStatus('error', { message: err.message || String(err) });
+    }
+});
+
+ipcMain.handle('download-update', async () => {
+    try {
+        await autoUpdater.downloadUpdate();
+    } catch (err) {
+        sendUpdateStatus('error', { message: err.message || String(err) });
+    }
+});
+
+ipcMain.handle('install-update', () => {
+    autoUpdater.quitAndInstall();
+});
+
+ipcMain.handle('get-app-version', () => APP_VERSION);
 
 // handle opening folder dialog
 ipcMain.handle('open-folder-dialog', async (event) => {

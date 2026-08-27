@@ -19,4 +19,10 @@ contextBridge.exposeInMainWorld('api', {
     sessionStillHere: () => ipcRenderer.send('session-still-here'),
     onSessionWarning: (cb) => ipcRenderer.on('session-warning', (event, payload) => cb(payload)),
     onSessionWarningHide: (cb) => ipcRenderer.on('session-warning-hide', () => cb()),
+
+    getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+    checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+    downloadUpdate: () => ipcRenderer.invoke('download-update'),
+    installUpdate: () => ipcRenderer.invoke('install-update'),
+    onUpdateStatus: (cb) => ipcRenderer.on('update-status', (event, payload) => cb(payload)),
 });

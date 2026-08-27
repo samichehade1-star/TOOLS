@@ -21,9 +21,17 @@
     "png-to-ico": "^3.0.2",
     "sharp": "^0.35.3"
   },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
   "build": {
     "appId": "com.sami.diddler",
     "productName": "Diddler",
+    "publish": {
+      "provider": "github",
+      "owner": "samichehade1-star",
+      "repo": "diddler"
+    },
     "win": {
       "target": "nsis",
       "icon": "build/icon.ico",

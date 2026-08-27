@@ -82,4 +82,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // signal that renderer is ready
   rendererReady: () => ipcRenderer.send('renderer-ready'),
+
+  // auto-updates
+  getAppVersion: () => ipcRenderer.invoke('get-app-version'),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  downloadUpdate: () => ipcRenderer.invoke('download-update'),
+  installUpdate: () => ipcRenderer.invoke('install-update'),
+  onUpdateStatus: (callback) => ipcRenderer.on('update-status', (event, data) => callback(data)),
 });
