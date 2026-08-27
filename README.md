@@ -4,10 +4,10 @@ Source for Sami's desktop tools. Each app below has its own release channel — 
 
 | | App | | |
 |---|---|---|---|
-| <img src="MOD MANAGER/assets/chub-logo.png" width="48"> | **CHUB Mod Manager**<br>Mod manager for Dead by Daylight | [![Latest release](https://img.shields.io/github/v/release/samichehade1-star/chub-mod-manager?label=download&style=for-the-badge)](https://github.com/samichehade1-star/chub-mod-manager/releases/latest) |
-| <img src="fmp-mod-manager/assets/fmp-logo.png" width="48"> | **FMP Mod Manager**<br>Mod manager for Dead by Daylight | [![Latest release](https://img.shields.io/github/v/release/samichehade1-star/fmp-mod-manager?label=download&style=for-the-badge)](https://github.com/samichehade1-star/fmp-mod-manager/releases/latest) |
+| <img src="CHUB Mod Manager/assets/chub-logo.png" width="48"> | **CHUB Mod Manager**<br>Mod manager for Dead by Daylight | [![Latest release](https://img.shields.io/github/v/release/samichehade1-star/chub-mod-manager?label=download&style=for-the-badge)](https://github.com/samichehade1-star/chub-mod-manager/releases/latest) |
+| <img src="FMP Mod Manager/assets/fmp-logo.png" width="48"> | **FMP Mod Manager**<br>Mod manager for Dead by Daylight | [![Latest release](https://img.shields.io/github/v/release/samichehade1-star/fmp-mod-manager?label=download&style=for-the-badge)](https://github.com/samichehade1-star/fmp-mod-manager/releases/latest) |
 | <img src="Diddler/assets/logo.png" width="48"> | **Diddler**<br>Send/cancel Dead by Daylight friend requests when the in-game system won't cooperate | [![Latest release](https://img.shields.io/github/v/release/samichehade1-star/diddler?label=download&style=for-the-badge)](https://github.com/samichehade1-star/diddler/releases/latest) |
-| <img src="All Purpose launcher/assets/logo.png" width="48"> | **LaunchPad X**<br>Universal launch pad for trainers, spoofers, bypasses and unlockers | [![Latest release](https://img.shields.io/github/v/release/samichehade1-star/launchpad-x?label=download&style=for-the-badge)](https://github.com/samichehade1-star/launchpad-x/releases/latest) |
+| <img src="LaunchPad X/assets/logo.png" width="48"> | **LaunchPad X**<br>Universal launch pad for trainers, spoofers, bypasses and unlockers | [![Latest release](https://img.shields.io/github/v/release/samichehade1-star/launchpad-x?label=download&style=for-the-badge)](https://github.com/samichehade1-star/launchpad-x/releases/latest) |
 
 ## Installing
 
