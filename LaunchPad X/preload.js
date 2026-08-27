@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('api', {
 
     launchProfile: (id) => ipcRenderer.invoke('launch-profile', id),
     cancelLaunch: (id) => ipcRenderer.invoke('cancel-launch', id),
+    forceClearActiveRun: (id) => ipcRenderer.invoke('force-clear-active-run', id),
     launchGame: (gameId) => ipcRenderer.invoke('launch-game', gameId),
     scanGames: () => ipcRenderer.invoke('scan-games'),
 

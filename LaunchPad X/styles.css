@@ -365,7 +365,18 @@ html, body {
 
 .app-row { border-radius: var(--radius-md); background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); overflow: hidden; transition: opacity 0.15s; }
 .app-row-head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
-.card.dragging, .game-card.dragging, .group-block.dragging { opacity: 0.35; }
+/* SortableJS drop-slot marker — left behind at the spot an item will land
+   while it's being dragged, so there's always one unambiguous "here's
+   where this goes" indicator instead of the real item shoving everything
+   else around live. sortable-drag is the item actually under the cursor. */
+.sortable-ghost {
+  border: 2px dashed color-mix(in srgb, var(--accent) 60%, transparent) !important;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--accent) 10%, transparent) !important;
+  opacity: 1 !important;
+}
+.sortable-ghost * { visibility: hidden; }
+.sortable-drag { opacity: 0.9; }
 .app-row.item-hidden { opacity: 0.5; }
 .app-row.item-hidden:hover { opacity: 0.8; }
 .app-row-name { flex: 1; background: transparent; border: none; color: var(--text); font-size: 13px; font-weight: 600; padding: 4px 6px; border-radius: 6px; }

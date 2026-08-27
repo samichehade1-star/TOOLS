@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs-extra');
 const os = require('os');
 const crypto = require('crypto');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const AdmZip = require('adm-zip');
 const Seven = require('node-7z');
 const sevenBin = require('7zip-bin');
@@ -844,7 +844,18 @@ async function attemptLaunch(profile, attempt) {
     const trackedRunningAs = activeRuns.get(profile.id);
     if (trackedRunningAs) {
         const expectedExePath = await resolveExpectedExePath(profile, workingDir);
-        const stillAlive = await findRunningProcessInDir(workingDir, 1, expectedExePath);
+        let stillAlive = await findRunningProcessInDir(workingDir, 1, expectedExePath);
+        if (stillAlive) {
+            // Windows can take a moment to tear down a process's entry in the
+            // WMI process table after it's actually exited — a single check
+            // right on the heels of closing a tool can catch that brief lag
+            // and report it as still running when it isn't. Re-confirming
+            // after a short wait filters that out without weakening the
+            // check for a tool that's genuinely still open (which will
+            // obviously still be there a second later too).
+            await new Promise(r => setTimeout(r, 1200));
+            stillAlive = await findRunningProcessInDir(workingDir, 1, expectedExePath);
+        }
         if (stillAlive) {
             throw new NonRetryableError(`${profile.name} is already running (as "${stillAlive}"). Launching a second copy risks conflicting with it over the same license/session and getting both kicked. If you don't see its window, check behind this one or Alt-Tab.`);
         }
@@ -935,6 +946,17 @@ ipcMain.handle('cancel-launch', async (event, profileId) => {
     return { success: true };
 });
 
+// Escape hatch for the "already running" guard — offered in the UI when a
+// launch gets blocked, in case the folder/exe-path heuristic in
+// findRunningProcessInDir keeps mismatching for a specific tool (e.g. one
+// that leaves an unrelated helper process alive in the same folder after
+// closing). Clearing the tracked state just means the next launch attempt
+// skips the liveness check instead of trusting a possibly-wrong "yes".
+ipcMain.handle('force-clear-active-run', (event, profileId) => {
+    activeRuns.delete(profileId);
+    return { success: true };
+});
+
 // =====================================================================
 // game auto-detection (Steam / Epic Games / Xbox) + linked game launch
 // =====================================================================
@@ -1005,6 +1027,21 @@ ipcMain.handle('launch-game', async (event, gameId) => {
         if (game.exePath) {
             if (!(await fs.pathExists(game.exePath))) throw new Error(`game executable not found: ${game.exePath}`);
             logToConsole(`launching game (direct exe): ${game.exePath}`, 'info');
+            if (/\.ps1$/i.test(game.exePath)) {
+                // Windows' default double-click action for .ps1 is "Edit" (opens in
+                // Notepad), not "Run" — shell.openPath() below follows that same
+                // OS file-association default, so .ps1 targets need routing through
+                // powershell.exe directly instead, same as the tool-launch pipeline
+                // (buildLaunchAndActivateScript) already does.
+                const proc = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', game.exePath], {
+                    cwd: path.dirname(game.exePath),
+                    detached: true,
+                    stdio: 'ignore',
+                });
+                proc.on('error', (err) => logToConsole(`failed to launch script: ${err.message}`, 'error'));
+                proc.unref();
+                return { success: true };
+            }
             const openError = await shell.openPath(game.exePath);
             if (openError) throw new Error(`failed to launch: ${openError}`);
             return { success: true };

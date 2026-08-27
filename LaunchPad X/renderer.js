@@ -480,7 +480,6 @@ function renderGameTools(game) {
       block.dataset.id = groupName;
       const h3 = document.createElement('h3');
       h3.textContent = groupName;
-      h3.draggable = true;
       h3.title = 'Drag to reorder this category';
       const cardsGrid = document.createElement('div');
       cardsGrid.className = 'group-cards';
@@ -501,6 +500,25 @@ function renderGameTools(game) {
     for (const p of hiddenTools) hiddenCards.appendChild(buildCard(p));
   } else {
     hiddenBlock.style.display = 'none';
+  }
+
+  attachToolCardSortables(handleToolCardReorder);
+}
+
+async function handleToolCardReorder({ movedId, newGroup }) {
+  const ids = [...document.querySelectorAll('#game-tools .group-cards .card')].map(el => el.dataset.id);
+  const movedProfile = state.profiles.find(p => p.id === movedId);
+  const groupChanged = movedProfile && newGroup && movedProfile.group !== newGroup;
+  if (groupChanged) {
+    state.profiles = await window.api.saveProfile({ id: movedId, group: newGroup });
+  }
+  state.profiles = await window.api.reorderProfiles(ids);
+  // a group emptied out by the move leaves a stale header behind until the
+  // groups are rebuilt from scratch, so re-render rather than trust the
+  // in-place DOM the drag already produced.
+  if (groupChanged) {
+    const game = state.games.find(g => g.id === currentGameId);
+    if (game) renderGameTools(game);
   }
 }
 
@@ -607,12 +625,16 @@ async function runLaunch(profileId) {
   } else if (res.cancelled) {
     setCardStatus(profileId, 'idle', 'Cancelled.');
   } else {
-    setCardStatus(profileId, 'error', res.error);
+    // The "already running" guard is a heuristic (matches processes by
+    // folder/exe path, not an exact PID) — offer a way to skip it rather
+    // than leaving someone stuck if it ever mismatches for a given tool.
+    const isAlreadyRunning = /already running/i.test(res.error || '');
+    setCardStatus(profileId, 'error', res.error, undefined, isAlreadyRunning);
   }
 }
 
-function setCardStatus(profileId, kind, message, attempt) {
-  launchState.set(profileId, { kind, message, attempt });
+function setCardStatus(profileId, kind, message, attempt, forceOption) {
+  launchState.set(profileId, { kind, message, attempt, forceOption });
   document.querySelectorAll(`.card[data-id="${profileId}"]`).forEach(card => applyCardStatus(card, launchState.get(profileId)));
 }
 
@@ -628,11 +650,21 @@ function applyCardStatus(card, s) {
   else if (s.kind === 'error') statusEl.classList.add('status-error');
   else if (s.kind === 'trying' || s.kind === 'waiting') statusEl.classList.add('status-warn');
 
-  statusEl.innerHTML = `<span class="${dotClass}"></span><span>${escapeHtml(s.message || '')}</span>`;
+  const forceBtn = s.forceOption
+    ? ` <button class="link-btn force-relaunch-btn" data-id="${card.dataset.id}" title="Skip the already-running check and launch anyway">force relaunch</button>`
+    : '';
+  statusEl.innerHTML = `<span class="${dotClass}"></span><span>${escapeHtml(s.message || '')}</span>${forceBtn}`;
   launchBtn.disabled = (s.kind === 'trying' || s.kind === 'waiting');
   launchBtn.textContent = s.kind === 'trying' ? 'Launching…' : (s.kind === 'waiting' ? 'Retrying…' : 'Launch');
   if (s.kind === 'trying' || s.kind === 'waiting') card.classList.add('retrying');
 }
+
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('.force-relaunch-btn');
+  if (!btn) return;
+  await window.api.forceClearActiveRun(btn.dataset.id);
+  runLaunch(btn.dataset.id);
+});
 
 window.api.onLaunchProgress((payload) => {
   const { profileId, attempt, status, delayMs } = payload;
@@ -1050,143 +1082,37 @@ document.getElementById('btn-add-app').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------- drag-to-reorder
-// Attached fresh each time a container's cards are (re)built, since these
-// containers (game-grid, and each game's per-category tool-card grid) are
-// rebuilt via innerHTML rather than persisting across renders. Whole cards
-// are draggable rather than using a separate handle — none of these cards
-// contain a text field a drag could otherwise fight with.
-// axis 'grid' (default) compares 2D distance and uses left/right of an
-// item's center to decide before/after — right for a multi-column grid of
-// cards. axis 'vertical' is for a single-column stack (the category blocks
-// below): before/after there must come from vertical position alone, since
-// every item spans the full container width and so shares roughly the same
-// horizontal center — under 'grid' logic, before/after would end up decided
-// by which half of the window the cursor happens to be on, not by up/down.
-function getDragAfterElement(container, itemSelector, x, y, draggingEl, axis = 'grid') {
-  const els = [...container.querySelectorAll(itemSelector)].filter(el => el !== draggingEl);
-  let closest = { distance: Infinity, element: null, before: false };
-  for (const el of els) {
-    const box = el.getBoundingClientRect();
-    let distance, before;
-    if (axis === 'vertical') {
-      const centerY = box.top + box.height / 2;
-      distance = Math.abs(y - centerY);
-      before = y < centerY;
-    } else {
-      const dx = x - (box.left + box.width / 2);
-      const dy = y - (box.top + box.height / 2);
-      distance = Math.sqrt(dx * dx + dy * dy);
-      before = dx < 0 && Math.abs(dy) < box.height;
-    }
-    if (distance < closest.distance) closest = { distance, element: el, before };
-  }
-  if (!closest.element) return null;
-  return closest.before ? closest.element : closest.element.nextElementSibling;
-}
+// Uses SortableJS (vendored via node_modules, loaded in index.html) instead
+// of a hand-rolled HTML5 drag implementation — a from-scratch version kept
+// hitting edge cases (position math corrupted by in-flight animations,
+// dragover firing faster than layout could settle) that a mature,
+// battle-tested library already handles correctly, including auto-scroll
+// near the container edges and nested sortable lists (categories that are
+// themselves reorderable, each also containing a reorderable+cross-group
+// grid of tool cards).
+//
+// #game-tools hosts two independent Sortable instances at once: one on
+// #game-tools itself for whole-category reordering (handle: 'h3', so
+// grabbing a card never triggers it), and one per .group-cards grid for the
+// tool cards inside, all sharing the same `group` name so a card can be
+// dragged from one category into another. The per-category ones are
+// recreated every renderGameTools() call since that rebuilds the grids from
+// scratch; the category-level one is created once at boot since #game-tools
+// itself is never recreated.
+let toolCardSortables = [];
 
-function enableDragReorder(container, itemSelector, handleSelector, onReorder, axis = 'grid') {
-  let draggingEl = null;
-  container.addEventListener('dragstart', (e) => {
-    // a container can host more than one independent drag session (e.g.
-    // #game-tools also runs the cross-group card drag below) — dragstart
-    // bubbles to every listener on the container regardless of which
-    // draggable element it actually started on, so a handle-scoped listener
-    // must only preventDefault when the drag genuinely originates from its
-    // own handle, never for a drag some other listener is handling.
-    if (handleSelector && !e.target.closest(handleSelector)) return;
-    const item = e.target.closest(itemSelector);
-    if (!item) { e.preventDefault(); return; }
-    draggingEl = item;
-    setTimeout(() => item.classList.add('dragging'), 0);
-    e.dataTransfer.effectAllowed = 'move';
-  });
-  container.addEventListener('dragover', (e) => {
-    if (!draggingEl) return;
-    e.preventDefault();
-    const after = getDragAfterElement(container, itemSelector, e.clientX, e.clientY, draggingEl, axis);
-    if (after == null) container.appendChild(draggingEl);
-    else container.insertBefore(draggingEl, after);
-  });
-  container.addEventListener('dragend', () => {
-    if (!draggingEl) return;
-    draggingEl.classList.remove('dragging');
-    const ids = [...container.querySelectorAll(itemSelector)].map(el => el.dataset.id);
-    draggingEl = null;
-    onReorder(ids);
-  });
-}
-
-// Like enableDragReorder, but the drag session spans several sibling
-// containers at once (one per category) instead of a single one — a card
-// can cross from its starting group into another group's grid mid-drag.
-// root is the shared ancestor both containers live under; onReorder gets
-// the moved card's id, the group it ended up in (from that group-cards
-// element's data-group), and the flattened id order across every group so
-// the persisted array stays in the same order the groups now render in.
-function enableCrossGroupDragReorder(root, groupSelector, itemSelector, onReorder) {
-  let draggingEl = null;
-  root.addEventListener('dragstart', (e) => {
-    // root can host a second, independent drag session (the whole-category
-    // reorder below, started from an <h3> rather than a .card) — only claim
-    // drags that actually originate from a card; anything else isn't ours
-    // to cancel, so leave the event alone for that other listener.
-    const item = e.target.closest(itemSelector);
-    if (!item || !root.contains(item)) return;
-    draggingEl = item;
-    setTimeout(() => item.classList.add('dragging'), 0);
-    e.dataTransfer.effectAllowed = 'move';
-  });
-  root.addEventListener('dragover', (e) => {
-    if (!draggingEl) return;
-    const group = e.target.closest(groupSelector);
-    if (!group || !root.contains(group)) return; // between groups — leave the card where it is until over a valid one
-    e.preventDefault();
-    const after = getDragAfterElement(group, itemSelector, e.clientX, e.clientY, draggingEl);
-    if (after == null) group.appendChild(draggingEl);
-    else group.insertBefore(draggingEl, after);
-  });
-  root.addEventListener('dragend', () => {
-    if (!draggingEl) return;
-    draggingEl.classList.remove('dragging');
-    const finalGroup = draggingEl.closest(groupSelector);
-    const ids = [...root.querySelectorAll(groupSelector)].flatMap(g => [...g.querySelectorAll(itemSelector)].map(el => el.dataset.id));
-    const movedId = draggingEl.dataset.id;
-    draggingEl = null;
-    onReorder({ ids, movedId, newGroup: finalGroup ? finalGroup.dataset.group : null });
-  });
-}
-
-// Native HTML5 drag-and-drop has no built-in auto-scroll, so dragging a
-// card or category toward the top/bottom edge of the scrollable page does
-// nothing on its own — anything currently off-screen is simply unreachable.
-// This watches every drag (card, cross-group card, category, game grid —
-// dragover bubbles to document regardless of which drag session is active)
-// and scrolls the main content pane while the cursor sits near its edge.
-function enableDragAutoScroll(scrollEl) {
-  const EDGE_ZONE = 80; // px from the top/bottom edge that triggers scrolling
-  const MAX_SPEED = 16; // px per animation frame at the very edge
-  let speed = 0;
-  let rafId = null;
-
-  function tick() {
-    if (speed !== 0) scrollEl.scrollTop += speed;
-    rafId = requestAnimationFrame(tick);
-  }
-
-  document.addEventListener('dragover', (e) => {
-    const rect = scrollEl.getBoundingClientRect();
-    const y = e.clientY;
-    if (y < rect.top + EDGE_ZONE) {
-      speed = -MAX_SPEED * (1 - Math.max(0, y - rect.top) / EDGE_ZONE);
-    } else if (y > rect.bottom - EDGE_ZONE) {
-      speed = MAX_SPEED * (1 - Math.max(0, rect.bottom - y) / EDGE_ZONE);
-    } else {
-      speed = 0;
-    }
-  });
-  document.addEventListener('dragend', () => { speed = 0; });
-  document.addEventListener('drop', () => { speed = 0; });
-  rafId = requestAnimationFrame(tick);
+function attachToolCardSortables(onReorder) {
+  for (const s of toolCardSortables) s.destroy();
+  toolCardSortables = [...document.querySelectorAll('#game-tools .group-cards')].map(groupEl =>
+    Sortable.create(groupEl, {
+      group: 'tool-cards',
+      animation: 150,
+      onEnd: (evt) => onReorder({
+        movedId: evt.item.dataset.id,
+        newGroup: evt.to.dataset.group,
+      }),
+    })
+  );
 }
 
 // ---------------------------------------------------------------- boot
@@ -1199,50 +1125,42 @@ function enableDragAutoScroll(scrollEl) {
   refreshCategoryDatalist();
   renderLibrary();
 
-  enableDragAutoScroll(document.querySelector('.content'));
-
-  enableDragReorder(document.getElementById('game-grid'), '.game-card', null, async (ids) => {
-    state.games = await window.api.reorderGames(ids);
+  Sortable.create(document.getElementById('game-grid'), {
+    animation: 150,
+    scroll: document.querySelector('.content'),
+    onEnd: async () => {
+      const ids = [...document.querySelectorAll('#game-grid .game-card')].map(el => el.dataset.id);
+      state.games = await window.api.reorderGames(ids);
+    },
   });
 
-  // wired once here (not inside renderGameTools, which reruns on every
-  // edit/hide/add) since #game-tools itself is never recreated — only its
-  // children are rebuilt — so re-wiring there would stack duplicate
-  // listeners and fire onReorder multiple times per drag.
-  enableCrossGroupDragReorder(document.getElementById('game-tools'), '.group-cards', '.card', async ({ ids, movedId, newGroup }) => {
-    const movedProfile = state.profiles.find(p => p.id === movedId);
-    const groupChanged = movedProfile && newGroup && movedProfile.group !== newGroup;
-    if (groupChanged) {
-      state.profiles = await window.api.saveProfile({ id: movedId, group: newGroup });
-    }
-    state.profiles = await window.api.reorderProfiles(ids);
-    // a group emptied out by the move leaves a stale header behind until
-    // the groups are rebuilt from scratch, so re-render rather than trust
-    // the in-place DOM the native drag already produced.
-    if (groupChanged) {
+  // whole-category reorder — grabbed by its <h3> handle, independent of the
+  // per-category tool-card Sortables (attachToolCardSortables, wired inside
+  // renderGameTools since those grids get rebuilt on every edit/hide/add).
+  // Wired once here since #game-tools itself is never recreated. There's no
+  // separate "category order" field to persist: a category's position is
+  // just wherever its tools sit in the profiles array relative to other
+  // categories' tools, so reordering categories means re-flattening every
+  // visible tool for this game into the new category sequence (each
+  // category's own internal tool order carried over unchanged) and
+  // persisting that as the new array order.
+  Sortable.create(document.getElementById('game-tools'), {
+    animation: 150,
+    handle: 'h3',
+    draggable: '.group-block',
+    scroll: document.querySelector('.content'),
+    onEnd: async () => {
       const game = state.games.find(g => g.id === currentGameId);
-      if (game) renderGameTools(game);
-    }
-  });
-
-  // whole-category reorder — grabbed by its <h3> (see enableDragReorder's
-  // handleSelector handling above), independent of the card-level drag
-  // session on the same #game-tools root. There's no separate "category
-  // order" field to persist: a category's position is just wherever its
-  // tools sit in the profiles array relative to other categories' tools, so
-  // reordering categories means re-flattening every visible tool for this
-  // game into the new category sequence (each category's own internal tool
-  // order carried over unchanged) and persisting that as the new array order.
-  enableDragReorder(document.getElementById('game-tools'), '.group-block', 'h3', async (groupNamesInOrder) => {
-    const game = state.games.find(g => g.id === currentGameId);
-    if (!game) return;
-    const visible = state.profiles.filter(p => p.gameId === game.id && !p.hidden);
-    const flatIds = [];
-    for (const groupName of groupNamesInOrder) {
-      for (const p of visible) {
-        if ((p.group || 'Custom') === groupName) flatIds.push(p.id);
+      if (!game) return;
+      const groupNamesInOrder = [...document.querySelectorAll('#game-tools .group-block')].map(el => el.dataset.id);
+      const visible = state.profiles.filter(p => p.gameId === game.id && !p.hidden);
+      const flatIds = [];
+      for (const groupName of groupNamesInOrder) {
+        for (const p of visible) {
+          if ((p.group || 'Custom') === groupName) flatIds.push(p.id);
+        }
       }
-    }
-    state.profiles = await window.api.reorderProfiles(flatIds);
-  }, 'vertical');
+      state.profiles = await window.api.reorderProfiles(flatIds);
+    },
+  });
 })();
