@@ -110,6 +110,10 @@ let appState = {
     games: defaultGames(),
     theme: defaultTheme(),
     windowBounds: { width: 1180, height: 780 },
+    // presets the user deliberately deleted — the "fold in newly-added
+    // presets" step in loadState() must not resurrect these, so a delete
+    // has to leave a tombstone instead of just removing the profile.
+    deletedPresetIds: [],
 };
 
 const backupFilePath = settingsFilePath + '.bak';
@@ -166,11 +170,14 @@ async function loadState() {
             theme: { ...defaultTheme(), ...(data.theme || {}) },
         };
         if (!Array.isArray(appState.games)) appState.games = defaultGames();
+        if (!Array.isArray(appState.deletedPresetIds)) appState.deletedPresetIds = [];
         // fold in any newly-added presets for users upgrading from an older
         // seed list, without clobbering paths/settings they've already set
+        // — but never a preset the user deliberately deleted (see delete-profile).
         const existingIds = new Set(appState.profiles.map(p => p.id));
+        const deletedIds = new Set(appState.deletedPresetIds);
         for (const preset of defaultProfiles()) {
-            if (!existingIds.has(preset.id)) appState.profiles.push(preset);
+            if (!existingIds.has(preset.id) && !deletedIds.has(preset.id)) appState.profiles.push(preset);
         }
         if (usedBackup) {
             logToConsole('the main settings file failed to load — recovered your library and tools from the backup copy instead.', 'success');
@@ -233,6 +240,28 @@ function createWindow() {
 
     Menu.setApplicationMenu(null);
     mainWindow.loadFile('index.html');
+
+    // The renderer auto-saves several forms (tool/game edit fields, theme
+    // sliders) on a short debounce. Closing the app inside that debounce
+    // window used to drop the last edit silently — e.g. picking a game to
+    // link a tool to, then immediately hitting close, before the debounce
+    // fired. Hold the close until the renderer confirms every pending
+    // debounce has flushed, with a timeout fallback in case the page can't
+    // respond.
+    let readyToClose = false;
+    mainWindow.on('close', (e) => {
+        if (readyToClose) return;
+        e.preventDefault();
+        mainWindow.webContents.send('flush-before-close');
+        const finish = () => {
+            if (readyToClose) return;
+            readyToClose = true;
+            ipcMain.removeListener('flush-complete', finish);
+            if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close();
+        };
+        ipcMain.once('flush-complete', finish);
+        setTimeout(finish, 1500);
+    });
 
     let resizeTimer = null;
     mainWindow.on('resize', () => {
@@ -354,6 +383,11 @@ ipcMain.handle('save-profile', async (event, profile) => {
 
 ipcMain.handle('delete-profile', async (event, id) => {
     appState.profiles = appState.profiles.filter(p => p.id !== id);
+    // record a tombstone for seeded presets so the next boot's "fold in
+    // newly-added presets" pass (loadState) doesn't bring a deleted one back
+    if (defaultProfiles().some(p => p.id === id) && !appState.deletedPresetIds.includes(id)) {
+        appState.deletedPresetIds.push(id);
+    }
     await persistState();
     return { success: true, profiles: appState.profiles };
 });

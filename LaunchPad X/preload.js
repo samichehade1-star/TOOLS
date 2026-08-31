@@ -5,6 +5,8 @@ contextBridge.exposeInMainWorld('api', {
     splashFinished: () => ipcRenderer.send('splash-finished'),
     maximize: () => ipcRenderer.send('maximize-window'),
     close: () => ipcRenderer.send('close-window'),
+    onFlushBeforeClose: (cb) => ipcRenderer.on('flush-before-close', () => cb()),
+    flushComplete: () => ipcRenderer.send('flush-complete'),
 
     pickFolder: () => ipcRenderer.invoke('pick-folder'),
     pickFile: (filters) => ipcRenderer.invoke('pick-file', filters),

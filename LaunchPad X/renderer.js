@@ -29,6 +29,38 @@ let state = { profiles: [], games: [], theme: {} };
 let currentGameId = null;
 let librarySearchQuery = '';
 
+// ---------------------------------------------------------------- debounced saves that survive window close
+// Several forms auto-save on a short debounce so typing doesn't spam IPC.
+// Without this, closing the window inside that debounce window (e.g.
+// picking a value in a dropdown and immediately hitting the titlebar close
+// button) silently dropped the last edit — main.js now holds the window
+// open on close until every pending debounce here has flushed.
+const pendingSaveFlushers = new Set();
+
+function createDebouncedSave(delayMs, fn) {
+  let timer = null;
+  let latestArgs = [];
+  const flush = async () => {
+    if (timer === null) return;
+    clearTimeout(timer);
+    timer = null;
+    pendingSaveFlushers.delete(flush);
+    await fn(...latestArgs);
+  };
+  const trigger = (...args) => {
+    latestArgs = args;
+    clearTimeout(timer);
+    pendingSaveFlushers.add(flush);
+    timer = setTimeout(flush, delayMs);
+  };
+  return trigger;
+}
+
+window.api.onFlushBeforeClose(async () => {
+  await Promise.all([...pendingSaveFlushers].map(flush => flush()));
+  window.api.flushComplete();
+});
+
 // ---------------------------------------------------------------- window chrome
 document.getElementById('btn-min').addEventListener('click', () => window.api.minimize());
 document.getElementById('btn-max').addEventListener('click', () => window.api.maximize());
@@ -218,12 +250,8 @@ function renderThemePresets() {
   }
 }
 
-let themeSaveTimer = null;
 function wireThemeInputs() {
-  const debounceSave = () => {
-    clearTimeout(themeSaveTimer);
-    themeSaveTimer = setTimeout(() => window.api.saveTheme(state.theme), 250);
-  };
+  const debounceSave = createDebouncedSave(250, () => window.api.saveTheme(state.theme));
   const bind = (id, key) => {
     document.getElementById(id).addEventListener('input', (e) => {
       state.theme[key] = e.target.value;
@@ -839,30 +867,26 @@ function buildGameRow(game) {
     robloxNote.style.display = p === 'Roblox' ? 'block' : 'none';
   }
 
-  let saveTimer = null;
-  function persistGame(extra) {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(async () => {
-      const updated = {
-        id: game.id,
-        name: nameInput.value.trim() || game.name,
-        platform: platform.value,
-        steamAppId: steamId.value.trim(),
-        epicAppName: epicName.value.trim(),
-        ubisoftId: ubisoftId.value.trim(),
-        battleNetUid: battleNetUid.value.trim(),
-        exePath: exe.value,
-        ...extra,
-      };
-      const games = await window.api.saveGame(updated);
-      state.games = games;
-      Object.assign(game, games.find(g => g.id === game.id));
-      renderLibrary();
-      const idx = state.games.findIndex(g => g.id === game.id);
-      if (idx !== -1) thumbImg.classList.remove('loaded');
-      if (idx !== -1) resolveCoverImage(thumbImg, state.games[idx]);
-    }, 300);
-  }
+  const persistGame = createDebouncedSave(300, async (extra) => {
+    const updated = {
+      id: game.id,
+      name: nameInput.value.trim() || game.name,
+      platform: platform.value,
+      steamAppId: steamId.value.trim(),
+      epicAppName: epicName.value.trim(),
+      ubisoftId: ubisoftId.value.trim(),
+      battleNetUid: battleNetUid.value.trim(),
+      exePath: exe.value,
+      ...extra,
+    };
+    const games = await window.api.saveGame(updated);
+    state.games = games;
+    Object.assign(game, games.find(g => g.id === game.id));
+    renderLibrary();
+    const idx = state.games.findIndex(g => g.id === game.id);
+    if (idx !== -1) thumbImg.classList.remove('loaded');
+    if (idx !== -1) resolveCoverImage(thumbImg, state.games[idx]);
+  });
 
   [nameInput, steamId, epicName, ubisoftId, battleNetUid].forEach(el => el.addEventListener('input', persistGame));
   platform.addEventListener('change', () => { updateFieldVisibility(); persistGame(); });
@@ -1031,34 +1055,30 @@ function buildAppRow(profile) {
     if (picked) { fPath.value = picked; persistRow(); }
   });
 
-  let saveTimer = null;
-  function persistRow() {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(async () => {
-      const updated = {
-        id: profile.id,
-        name: nameInput.value.trim() || profile.name,
-        color: fColor.value,
-        group: fGroup.value.trim() || 'Custom',
-        method: fMethod.value,
-        targetPath: fPath.value,
-        elevate: fElevate.value,
-        retry: fRetry.checked,
-        locked: profile.locked,
-        gameId: fGameSelect.value,
-      };
-      const profiles = await window.api.saveProfile(updated);
-      state.profiles = profiles;
-      renderLibrary();
-      refreshCategoryDatalist();
-      const idx = state.profiles.findIndex(p => p.id === profile.id);
-      if (idx !== -1) Object.assign(profile, state.profiles[idx]);
-      if (currentGameId) {
-        const game = state.games.find(g => g.id === currentGameId);
-        if (game) renderGameTools(game);
-      }
-    }, 300);
-  }
+  const persistRow = createDebouncedSave(300, async () => {
+    const updated = {
+      id: profile.id,
+      name: nameInput.value.trim() || profile.name,
+      color: fColor.value,
+      group: fGroup.value.trim() || 'Custom',
+      method: fMethod.value,
+      targetPath: fPath.value,
+      elevate: fElevate.value,
+      retry: fRetry.checked,
+      locked: profile.locked,
+      gameId: fGameSelect.value,
+    };
+    const profiles = await window.api.saveProfile(updated);
+    state.profiles = profiles;
+    renderLibrary();
+    refreshCategoryDatalist();
+    const idx = state.profiles.findIndex(p => p.id === profile.id);
+    if (idx !== -1) Object.assign(profile, state.profiles[idx]);
+    if (currentGameId) {
+      const game = state.games.find(g => g.id === currentGameId);
+      if (game) renderGameTools(game);
+    }
+  });
 
   [nameInput, fColor, fGroup, fMethod, fElevate, fGameSelect].forEach(el => {
     el.addEventListener('input', persistRow);
