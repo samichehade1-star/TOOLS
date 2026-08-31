@@ -1,6 +1,6 @@
 {
   "name": "launchpad-x",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "LaunchPad X — a universal launch pad for trainers, spoofers, bypasses and unlockers",
   "main": "main.js",
   "scripts": {
