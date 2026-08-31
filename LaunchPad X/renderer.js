@@ -15,6 +15,7 @@ const PLATFORM_COLORS = {
   'Steam': '#66c0f4',
   'Epic Games': '#c2c2c2',
   'Ubisoft': '#0d78f2',
+  'Battle.net': '#148eff',
   'Roblox': '#e2231a',
   'Microsoft': '#00a4ef',
   'Other': '#8b5cf6',
@@ -696,6 +697,7 @@ function isAlreadyInLibrary(detected) {
     if (detected.launch.type === 'epic') return g.epicAppName === detected.launch.epicAppName;
     if (detected.launch.type === 'xbox') return g.xboxLaunchId === detected.launch.xboxLaunchId;
     if (detected.launch.type === 'ubisoft') return g.ubisoftId === detected.launch.ubisoftId;
+    if (detected.launch.type === 'battlenet') return g.battleNetUid === detected.launch.battleNetUid;
     if (detected.launch.type === 'roblox') return true; // only one Roblox install ever makes sense
     return false;
   });
@@ -756,6 +758,7 @@ function buildScanResultRow(detected) {
       epicAppName: detected.launch.epicAppName || '',
       xboxLaunchId: detected.launch.xboxLaunchId || '',
       ubisoftId: detected.launch.ubisoftId || '',
+      battleNetUid: detected.launch.battleNetUid || '',
       exePath: detected.launch.exePath || '',
     });
     state.games.push(newGame);
@@ -803,11 +806,13 @@ function buildGameRow(game) {
   const steamId = node.querySelector('.g-steamid');
   const epicName = node.querySelector('.g-epicname');
   const ubisoftId = node.querySelector('.g-ubisoftid');
+  const battleNetUid = node.querySelector('.g-battlenetuid');
   const exe = node.querySelector('.g-exe');
   const exeBrowse = node.querySelector('.g-exe-browse');
   const steamIdLabel = node.querySelector('.g-steamid-label');
   const epicNameLabel = node.querySelector('.g-epicname-label');
   const ubisoftIdLabel = node.querySelector('.g-ubisoftid-label');
+  const battleNetUidLabel = node.querySelector('.g-battlenetuid-label');
   const exeLabel = node.querySelector('.g-exe-label');
   const coverPick = node.querySelector('.g-cover-pick');
   const coverSteam = node.querySelector('.g-cover-steam');
@@ -819,6 +824,7 @@ function buildGameRow(game) {
   steamId.value = game.steamAppId || '';
   epicName.value = game.epicAppName || '';
   ubisoftId.value = game.ubisoftId || '';
+  battleNetUid.value = game.battleNetUid || '';
   exe.value = game.exePath || '';
   updateFieldVisibility();
 
@@ -827,7 +833,8 @@ function buildGameRow(game) {
     steamIdLabel.style.display = p === 'Steam' ? 'flex' : 'none';
     epicNameLabel.style.display = p === 'Epic Games' ? 'flex' : 'none';
     ubisoftIdLabel.style.display = p === 'Ubisoft' ? 'flex' : 'none';
-    exeLabel.style.display = (p === 'Microsoft' || p === 'Ubisoft' || p === 'Other') ? 'flex' : 'none';
+    battleNetUidLabel.style.display = p === 'Battle.net' ? 'flex' : 'none';
+    exeLabel.style.display = (p === 'Microsoft' || p === 'Ubisoft' || p === 'Battle.net' || p === 'Other') ? 'flex' : 'none';
     coverSteam.style.display = p === 'Steam' ? 'inline-flex' : 'none';
     robloxNote.style.display = p === 'Roblox' ? 'block' : 'none';
   }
@@ -843,6 +850,7 @@ function buildGameRow(game) {
         steamAppId: steamId.value.trim(),
         epicAppName: epicName.value.trim(),
         ubisoftId: ubisoftId.value.trim(),
+        battleNetUid: battleNetUid.value.trim(),
         exePath: exe.value,
         ...extra,
       };
@@ -856,7 +864,7 @@ function buildGameRow(game) {
     }, 300);
   }
 
-  [nameInput, steamId, epicName, ubisoftId].forEach(el => el.addEventListener('input', persistGame));
+  [nameInput, steamId, epicName, ubisoftId, battleNetUid].forEach(el => el.addEventListener('input', persistGame));
   platform.addEventListener('change', () => { updateFieldVisibility(); persistGame(); });
   exeBrowse.addEventListener('click', async () => {
     const picked = await window.api.pickFile([{ name: 'Executables', extensions: ['exe'] }]);

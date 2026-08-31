@@ -74,7 +74,7 @@ function applyPartialReorder(fullArray, orderedVisibleIds) {
 // at the game level, only each tool's method/retry contract is ---
 function defaultGames() {
     return [
-        { id: 'dbd', name: 'Dead by Daylight', platform: 'Steam', cover: '', coverSource: 'steam', coverAppId: '', steamAppId: '381210', epicAppName: '', ubisoftId: '', xboxLaunchId: '', exePath: '', detectedName: '' },
+        { id: 'dbd', name: 'Dead by Daylight', platform: 'Steam', cover: '', coverSource: 'steam', coverAppId: '', steamAppId: '381210', epicAppName: '', ubisoftId: '', battleNetUid: '', xboxLaunchId: '', exePath: '', detectedName: '' },
     ];
 }
 
@@ -91,7 +91,7 @@ function defaultProfiles() {
 }
 
 function defaultGameShape() {
-    return { id: '', name: 'New Game', platform: 'Steam', cover: '', coverSource: 'steam', coverAppId: '', steamAppId: '', epicAppName: '', ubisoftId: '', xboxLaunchId: '', exePath: '', detectedName: '', hidden: false };
+    return { id: '', name: 'New Game', platform: 'Steam', cover: '', coverSource: 'steam', coverAppId: '', steamAppId: '', epicAppName: '', ubisoftId: '', battleNetUid: '', xboxLaunchId: '', exePath: '', detectedName: '', hidden: false };
 }
 
 function defaultTheme() {
@@ -999,6 +999,23 @@ ipcMain.handle('launch-game', async (event, gameId) => {
         if (game.platform === 'Ubisoft' && game.ubisoftId) {
             logToConsole(`launching game via uplay://launch/${game.ubisoftId}/0`, 'info');
             await shell.openExternal(`uplay://launch/${game.ubisoftId}/0`);
+            return { success: true };
+        }
+        if (game.platform === 'Battle.net' && game.battleNetUid) {
+            // Neither route here is a true silent one-click launch like
+            // Steam/Epic/Ubisoft get: running a game's own launcher stub exe
+            // directly gets stopped by Battle.net's Agent (confirmed in
+            // Agent's own Operations log — it only ever reaches OP_VERSION,
+            // never OP_LAUNCH) because the Agent normally hands that stub a
+            // session token over IPC when its own "Play" button is clicked,
+            // which we have no way to generate. battlenet://<uid> is the
+            // Blizzard-endorsed alternative — it reliably auto-launches
+            // Blizzard-developed titles (WoW, Overwatch, Diablo) but for
+            // third-party ones like Call of Duty it only brings the client to
+            // that game's page, same limitation Playnite's own Battle.net
+            // integration has. Play still has to be clicked there by hand.
+            logToConsole(`opening Battle.net to this game via battlenet://${game.battleNetUid} — click Play there to launch`, 'info');
+            await shell.openExternal(`battlenet://${game.battleNetUid}`);
             return { success: true };
         }
         if (game.platform === 'Roblox') {

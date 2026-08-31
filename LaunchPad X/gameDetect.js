@@ -60,6 +60,14 @@ function guessExeInInstallRoot(installRoot) {
 }
 
 // --------------------------------------------------------------------- Steam
+// Steam installs its own shared runtime/redistributable stack as a normal
+// appmanifest, indistinguishable from a real game by installdir/name alone
+// except by its fixed, well-known appid — so it's excluded by id rather than
+// a name guess that could someday match a real game's title.
+const NON_GAME_STEAM_APPIDS = new Set([
+    '228980', // Steamworks Common Redistributables
+]);
+
 function scanSteamGames() {
     const games = [];
     const roots = ['C:\\Program Files (x86)\\Steam', 'C:\\Program Files\\Steam'].filter(dirExists);
@@ -92,6 +100,7 @@ function scanSteamGames() {
                 const name = parseAcfField(text, 'name');
                 const installdir = parseAcfField(text, 'installdir');
                 if (!appId || !installdir) continue;
+                if (NON_GAME_STEAM_APPIDS.has(appId)) continue;
                 const installRoot = path.join(steamappsDir, 'common', installdir);
                 if (!dirExists(installRoot)) continue;
                 games.push({
@@ -118,6 +127,11 @@ function scanEpicGames() {
         if (!f.toLowerCase().endsWith('.item')) continue;
         try {
             const data = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+            // Epic's own dev-tools (Unreal Engine itself, its bundled Quixel
+            // Bridge, Fab marketplace plugins, etc.) all get a normal .item
+            // manifest just like a game, but always carry this fixed
+            // namespace — a real game's CatalogNamespace is publisher-specific.
+            if (data.CatalogNamespace === 'ue') continue;
             const appName = data.AppName || data.MainGameAppName;
             const displayName = data.DisplayName || appName;
             const installRoot = data.InstallLocation;
@@ -182,6 +196,70 @@ async function scanUbisoftGames() {
     return games;
 }
 
+// ----------------------------------------------------------------- Battle.net
+// Like Ubisoft, Battle.net registers each install as a normal "uninstall"
+// entry rather than its own manifest — but every one of them (the Battle.net
+// launcher itself included) shares Publisher "Blizzard Entertainment" and an
+// UninstallString invoking "Blizzard Uninstaller.exe --uid=<code>", where
+// <code> is Blizzard's internal product code (e.g. "odin" for Call of Duty
+// Modern Warfare). The registry's own DisplayIcon is NOT trustworthy as a
+// launch exe here — for at least third-party (non-Blizzard-developed) titles
+// it points at the raw shipping exe (e.g. ModernWarfare.exe, 326MB) while
+// Blizzard/Activision's own Start Menu shortcut for the same game launches a
+// small same-folder "<Game> Launcher.exe" stub (4.9MB) instead — that stub
+// does the Battle.net Agent handshake the raw exe skips, exactly the
+// "thin stub vs. raw shipping exe" trap already noted for Epic above.
+// Even the correct stub can't be launched directly, though (see main.js's
+// launch-game handler) — exePath here is only a display/manual-launch
+// fallback, not the primary launch path.
+function findBattleNetLauncherExe(installRoot) {
+    if (!dirExists(installRoot)) return '';
+    let entries = [];
+    try { entries = fs.readdirSync(installRoot, { withFileTypes: true }); } catch { return ''; }
+    const hit = entries.find(e => e.isFile() && /launcher\.exe$/i.test(e.name));
+    return hit ? path.join(installRoot, hit.name) : '';
+}
+
+async function scanBattleNetGames() {
+    const script = [
+        `$paths = @(`,
+        `  'HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall',`,
+        `  'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall'`,
+        `)`,
+        `foreach ($base in $paths) {`,
+        `  Get-ChildItem $base -ErrorAction SilentlyContinue |`,
+        `    ForEach-Object {`,
+        `      $p = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue`,
+        `      if ($p.Publisher -eq 'Blizzard Entertainment' -and $p.DisplayName -and $p.InstallLocation -and $p.UninstallString -match '--uid=([^\\s"]+)') {`,
+        `        Write-Output "$($Matches[1])|$($p.DisplayName)|$($p.InstallLocation)|$($p.DisplayIcon)"`,
+        `      }`,
+        `    }`,
+        `}`,
+    ].join('\n');
+    const output = await runPowerShell(script);
+    const games = [];
+    const seen = new Set();
+    for (const line of output.split(/\r?\n/)) {
+        if (!line.includes('|')) continue;
+        const [uid, name, installRoot, displayIcon] = line.split('|');
+        if (!uid || uid.toLowerCase() === 'battle.net') continue; // the launcher itself, not a game
+        if (!name || !installRoot || !dirExists(installRoot.trim())) continue;
+        if (seen.has(uid)) continue;
+        seen.add(uid);
+        const root = installRoot.trim();
+        const iconExe = (displayIcon || '').replace(/,-?\d+$/, '').trim();
+        const exePath = findBattleNetLauncherExe(root) || (fileExists(iconExe) ? iconExe : guessExeInInstallRoot(root));
+        games.push({
+            platform: 'Battle.net',
+            id: `battlenet-${uid}`,
+            name: name.trim(),
+            installRoot: root,
+            launch: { type: 'battlenet', battleNetUid: uid, exePath },
+        });
+    }
+    return games;
+}
+
 // ------------------------------------------------------------------- Roblox
 // Roblox has no library/manifest of its own — the client exe lives in a
 // version-stamped folder (e.g. version-abcdef123456) that changes on every
@@ -233,8 +311,6 @@ function listWindowsDriveRoots() {
     return drives;
 }
 
-function psQuoteLocal(s) { return `'${String(s).replace(/'/g, "''")}'`; }
-
 function runPowerShell(script) {
     return new Promise((resolve) => {
         const encoded = Buffer.from(script, 'utf16le').toString('base64');
@@ -244,6 +320,11 @@ function runPowerShell(script) {
     });
 }
 
+// The Xbox app creates this exact folder on every drive it's allowed to
+// install games to, holding its local cloud-save cache (wgs/pgs
+// subfolders) — always this literal name, never a real game.
+const NON_GAME_XBOX_FOLDER_NAME = /^gamesave$/i;
+
 async function scanXboxGames() {
     const candidateFolders = [];
     for (const drive of listWindowsDriveRoots()) {
@@ -252,43 +333,41 @@ async function scanXboxGames() {
         let entries = [];
         try { entries = fs.readdirSync(root); } catch { continue; }
         for (const entry of entries) {
+            if (NON_GAME_XBOX_FOLDER_NAME.test(entry)) continue;
             const entryPath = path.join(root, entry);
             if (dirExists(entryPath)) candidateFolders.push({ name: entry, installRoot: entryPath });
         }
     }
     if (candidateFolders.length === 0) return [];
 
-    // cheap pass first: PackageFamilyName + InstallLocation for every appx
-    // package, so the slower per-package manifest lookup below only runs for
-    // the handful that actually match one of our candidate game folders.
+    // Get-AppxPackage's InstallLocation can't be matched against these
+    // folders: the Xbox app relocates game content here via per-file reparse
+    // points while the package itself stays registered under WindowsApps (a
+    // cross-drive junction to a same-named mirror folder, not this one) — so
+    // that never matches and every game silently fell back to manual launch.
+    // Get-StartApps sidesteps all of that: it already resolves each app's
+    // display name and ready-to-launch "PackageFamilyName!AppId" shell id.
     const listing = await runPowerShell(
-        `Get-AppxPackage | ForEach-Object { "$($_.PackageFamilyName)|$($_.InstallLocation)" }`
+        `Get-StartApps | ForEach-Object { "$($_.Name)|$($_.AppID)" }`
     );
-    const pkgLines = listing.split(/\r?\n/).filter(Boolean);
+    const normalize = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const startApps = listing.split(/\r?\n/)
+        .map(l => { const i = l.indexOf('|'); return i === -1 ? null : { name: l.slice(0, i), appId: l.slice(i + 1) }; })
+        // a UWP shell AppID always looks like "PackageFamilyName!AppId";
+        // non-UWP Start Menu entries (e.g. a Steam shortcut's "steam://...")
+        // use other schemes and would produce a bogus xboxLaunchId.
+        .filter(e => e && /^[^!]+![^!]+$/.test(e.appId));
 
     const games = [];
     for (const folder of candidateFolders) {
-        const match = pkgLines.find(l => l.toLowerCase().endsWith('|' + folder.installRoot.toLowerCase()));
-        if (!match) {
-            games.push({ platform: 'Microsoft', id: `xbox-${folder.name}`, name: folder.name, installRoot: folder.installRoot, launch: { type: 'manual' } });
-            continue;
-        }
-        const pfn = match.split('|')[0];
-        const appIdScript = [
-            `try {`,
-            `  $pkg = Get-AppxPackage -PackageFamilyName ${psQuoteLocal(pfn)} | Select-Object -First 1`,
-            `  $manifest = Get-AppxPackageManifest $pkg`,
-            `  $app = $manifest.Package.Applications.Application | Select-Object -First 1`,
-            `  Write-Output $app.Id`,
-            `} catch { Write-Output 'App' }`,
-        ].join('\n');
-        const appId = (await runPowerShell(appIdScript)).trim() || 'App';
+        const target = normalize(folder.name);
+        const match = startApps.find(e => normalize(e.name) === target);
         games.push({
             platform: 'Microsoft',
             id: `xbox-${folder.name}`,
             name: folder.name,
             installRoot: folder.installRoot,
-            launch: { type: 'xbox', xboxLaunchId: `${pfn}!${appId}` },
+            launch: match ? { type: 'xbox', xboxLaunchId: match.appId } : { type: 'manual' },
         });
     }
     return games;
@@ -296,14 +375,15 @@ async function scanXboxGames() {
 
 // ------------------------------------------------------------------ combined
 async function scanInstalledGames() {
-    const [steam, epic, ubisoft, roblox, xbox] = await Promise.all([
+    const [steam, epic, ubisoft, battlenet, roblox, xbox] = await Promise.all([
         Promise.resolve(scanSteamGames()),
         Promise.resolve(scanEpicGames()),
         scanUbisoftGames(),
+        scanBattleNetGames(),
         Promise.resolve(scanRobloxGame()),
         scanXboxGames(),
     ]);
-    return [...steam, ...epic, ...ubisoft, ...roblox, ...xbox].sort((a, b) => a.name.localeCompare(b.name));
+    return [...steam, ...epic, ...ubisoft, ...battlenet, ...roblox, ...xbox].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-module.exports = { scanInstalledGames, scanSteamGames, scanEpicGames, scanUbisoftGames, scanRobloxGame, scanXboxGames, findRobloxPlayerExe };
+module.exports = { scanInstalledGames, scanSteamGames, scanEpicGames, scanUbisoftGames, scanBattleNetGames, scanRobloxGame, scanXboxGames, findRobloxPlayerExe };
