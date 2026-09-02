@@ -1814,7 +1814,7 @@ log = function (message, type = 'info') {
 // then plays straight through the rest of the library on loop. Volume/mute
 // are persisted in the main settings file under `music`, same as before. ---
 function setupBackgroundMusic() {
-    const playlist = ['assets/bg-music-1.mp3', 'assets/bg-music-2.mp3', 'assets/bg-music-3.mp3', 'assets/bg-music-4.mp3'];
+    const playlist = ['assets/bg-music-1.mp3', 'assets/bg-music-2.mp3', 'assets/bg-music-3.mp3', 'assets/bg-music-4.mp3', 'assets/bg-music-5.mp3'];
     const player = document.getElementById('bg-music-player');
     const volumeSlider = document.getElementById('music-volume-slider');
     const toggleBtn = document.getElementById('music-toggle-btn');
