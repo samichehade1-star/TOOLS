@@ -128,6 +128,21 @@
             background-color: #333;
             transform: translateY(1px);
         }
+        #music-controls {
+            -webkit-app-region: no-drag;
+            gap: 8px;
+            padding-left: 4px;
+        }
+        #music-controls #music-toggle-btn {
+            font-size: 0.85rem;
+            width: 26px;
+            height: 26px;
+        }
+        #music-volume-slider {
+            width: 70px;
+            accent-color: var(--accent-color);
+            cursor: pointer;
+        }
         #app {
             display: flex;
             flex-grow: 1;
@@ -916,8 +931,9 @@
 <body>
     <div id="drag-overlay">drop mods to install</div>
     <div id="custom-title-bar">
-        <div class="flex items-center">
-             <!-- left side intentionally empty: drag region -->
+        <div class="flex items-center" id="music-controls">
+            <button id="music-toggle-btn" class="title-bar-button" title="mute/unmute background music"><i class="fas fa-volume-up"></i></button>
+            <input type="range" id="music-volume-slider" min="0" max="100" value="40" title="background music volume">
         </div>
         <div id="title-bar-right">
             <button id="discord-button" title="Join our Discord"><i class="fa-brands fa-discord"></i></button>
@@ -928,6 +944,7 @@
             </div>
         </div>
     </div>
+    <audio id="bg-music-player" preload="auto"></audio>
     <div id="app">
         <div id="sidebar">
             <img id="sidebar-logo" src="assets/chub-logo.png" alt="CHUB Mod Manager">

@@ -1,6 +1,6 @@
 {
   "name": "chub-mod-manager",
-  "version": "1.4.2",
+  "version": "1.5.0",
   "description": "CHUB Mod Manager — a mod manager for Dead by Daylight",
   "main": "main.js",
   "scripts": {

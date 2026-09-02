@@ -12,7 +12,9 @@ let currentSettings = {
     spooferFolderPath: '',
     pakBypassFolderPath: '',
     unlockerFolderPath: '',
-    gameLaunchPaths: { Steam: '', 'Epic Games': '', Microsoft: '' }
+    gameLaunchPaths: { Steam: '', 'Epic Games': '', Microsoft: '' },
+    lastLaunchPlatform: 'Steam',
+    music: { muted: false, volume: 40 }
 };
 let currentDeployTargets = []; // kept in sync with the main process via renderDeployTargets()
 let installedModsData = {}; // stores the data about installed mods from main process
@@ -1250,6 +1252,8 @@ async function loadSettings() {
     applyTranslations(currentSettings.language);
     applyTheme(currentSettings.theme);
     applyLayoutSettings(currentSettings.layout);
+    const launchPlatformSelect = document.getElementById('launch-game-platform');
+    if (launchPlatformSelect) launchPlatformSelect.value = currentSettings.lastLaunchPlatform || 'Steam';
     await renderDeployTargets();
     await renderModProfiles();
     log('settings loaded and ui updated.', 'system');
@@ -1806,6 +1810,67 @@ log = function (message, type = 'info') {
     filterConsoleLog();
 };
 
+// --- background music: picks a random track from the library on startup,
+// then plays straight through the rest of the library on loop. Volume/mute
+// are persisted in the main settings file under `music`, same as before. ---
+function setupBackgroundMusic() {
+    const playlist = ['assets/bg-music-1.mp3', 'assets/bg-music-2.mp3', 'assets/bg-music-3.mp3', 'assets/bg-music-4.mp3'];
+    const player = document.getElementById('bg-music-player');
+    const volumeSlider = document.getElementById('music-volume-slider');
+    const toggleBtn = document.getElementById('music-toggle-btn');
+    if (!player || !volumeSlider || !toggleBtn) return;
+
+    const savedMusic = currentSettings.music || {};
+    let volume = Number.isFinite(savedMusic.volume) ? savedMusic.volume : 40;
+    if (volume < 0 || volume > 100) volume = 40;
+    let muted = !!savedMusic.muted;
+
+    volumeSlider.value = volume;
+    player.volume = volume / 100;
+    player.muted = muted;
+    const updateIcon = () => {
+        toggleBtn.querySelector('i').className = muted ? 'fas fa-volume-mute' : 'fas fa-volume-up';
+    };
+    updateIcon();
+
+    function persistMusicSettings() {
+        currentSettings.music = { muted, volume };
+        window.electronAPI.saveSettings({ music: { muted, volume } });
+    }
+
+    let currentIndex = Math.floor(Math.random() * playlist.length);
+    function playCurrent() {
+        player.src = playlist[currentIndex];
+        // Electron allows autoplay by default, but play() while unfocused can
+        // still reject — retry once on the next user click instead of giving up.
+        player.play().catch(() => {
+            document.addEventListener('click', () => player.play().catch(() => {}), { once: true });
+        });
+    }
+    player.addEventListener('ended', () => {
+        currentIndex = (currentIndex + 1) % playlist.length;
+        playCurrent();
+    });
+    playCurrent();
+
+    volumeSlider.addEventListener('input', () => {
+        volume = parseInt(volumeSlider.value, 10);
+        player.volume = volume / 100;
+        if (volume > 0 && muted) {
+            muted = false;
+            player.muted = false;
+            updateIcon();
+        }
+        persistMusicSettings();
+    });
+    toggleBtn.addEventListener('click', () => {
+        muted = !muted;
+        player.muted = muted;
+        updateIcon();
+        persistMusicSettings();
+    });
+}
+
 // --- initialization and event listeners ---
 window.addEventListener('error', function (e) {
     log('JS Error: ' + e.message + '\n' + (e.error && e.error.stack ? e.error.stack : ''), 'error');
@@ -1825,6 +1890,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('close-button')?.addEventListener('click', () => window.electronAPI.closeWindow());
         document.getElementById('discord-button')?.addEventListener('click', () => window.electronAPI.openDiscordInvite());
         initUpdateChecker();
+        setupBackgroundMusic();
 
         // Robust event delegation for tab buttons and title bar
         document.getElementById('sidebar')?.addEventListener('click', (e) => {
@@ -1922,6 +1988,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.getElementById('launch-unlocker-btn')?.addEventListener('click', (e) => {
             launchTool(e.currentTarget, () => window.electronAPI.launchUnlocker(), 'unlocker');
         });
+        // remember the last platform picked so relaunching (or a fresh app
+        // launch) doesn't silently reset back to the Steam default
+        document.getElementById('launch-game-platform')?.addEventListener('change', (e) => {
+            currentSettings.lastLaunchPlatform = e.target.value;
+            window.electronAPI.saveSettings({ lastLaunchPlatform: e.target.value });
+        });
         // launching the game gets a 10s countdown first, so any active tools
         // have time to finish injecting before the game process starts
         document.getElementById('launch-game-btn')?.addEventListener('click', async (e) => {
@@ -1936,13 +2008,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             );
             log('waiting 10s before launching the game so any launched tools can finish injecting...', 'system');
 
-            button.disabled = true;
-            for (let secondsLeft = 10; secondsLeft > 0; secondsLeft--) {
-                button.innerHTML = `<i class="fas fa-hourglass-half"></i> launching in ${secondsLeft}s...`;
-                await new Promise(r => setTimeout(r, 1000));
+            try {
+                button.disabled = true;
+                for (let secondsLeft = 10; secondsLeft > 0; secondsLeft--) {
+                    button.innerHTML = `<i class="fas fa-hourglass-half"></i> launching in ${secondsLeft}s...`;
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+                button.innerHTML = originalHtml;
+                await launchTool(button, () => window.electronAPI.launchGame(platform), `game (${platform})`);
+            } finally {
+                // re-enable even if the game crashes right after launch or the
+                // countdown/launch throws — otherwise this button stays dead
+                // until the whole app is restarted
+                button.disabled = false;
+                button.innerHTML = originalHtml;
             }
-            button.innerHTML = originalHtml;
-            await launchTool(button, () => window.electronAPI.launchGame(platform), `game (${platform})`);
         });
 
         // auto-detect game install locations across steam/epic/xbox

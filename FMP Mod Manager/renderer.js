@@ -1228,6 +1228,8 @@ async function loadSettings() {
     applyTranslations(currentSettings.language);
     applyTheme(currentSettings.theme);
     applyLayoutSettings(currentSettings.layout);
+    const launchPlatformSelect = document.getElementById('launch-game-platform');
+    if (launchPlatformSelect) launchPlatformSelect.value = currentSettings.lastLaunchPlatform || 'Steam';
     await renderDeployTargets();
     await renderModProfiles();
     log('settings loaded and ui updated.', 'system');
@@ -1929,6 +1931,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             launchTool(e.currentTarget, () => window.electronAPI.launchSpoofer(), 'spoofer');
         });
+        // remember the last platform picked so relaunching (or a fresh app
+        // launch) doesn't silently reset back to the Steam default
+        document.getElementById('launch-game-platform')?.addEventListener('change', (e) => {
+            currentSettings.lastLaunchPlatform = e.target.value;
+            window.electronAPI.saveSettings({ lastLaunchPlatform: e.target.value });
+        });
         // launching the game gets a 10s countdown first, so trainer/spoofer
         // have time to finish injecting before the game process starts
         document.getElementById('launch-game-btn')?.addEventListener('click', async (e) => {
@@ -1943,13 +1951,21 @@ document.addEventListener('DOMContentLoaded', async () => {
             );
             log('waiting 10s before launching the game so trainer/spoofer can finish injecting...', 'system');
 
-            button.disabled = true;
-            for (let secondsLeft = 10; secondsLeft > 0; secondsLeft--) {
-                button.innerHTML = `<i class="fas fa-hourglass-half"></i> launching in ${secondsLeft}s...`;
-                await new Promise(r => setTimeout(r, 1000));
+            try {
+                button.disabled = true;
+                for (let secondsLeft = 10; secondsLeft > 0; secondsLeft--) {
+                    button.innerHTML = `<i class="fas fa-hourglass-half"></i> launching in ${secondsLeft}s...`;
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+                button.innerHTML = originalHtml;
+                await launchTool(button, () => window.electronAPI.launchGame(platform), `game (${platform})`);
+            } finally {
+                // re-enable even if the game crashes right after launch or the
+                // countdown/launch throws — otherwise this button stays dead
+                // until the whole app is restarted
+                button.disabled = false;
+                button.innerHTML = originalHtml;
             }
-            button.innerHTML = originalHtml;
-            await launchTool(button, () => window.electronAPI.launchGame(platform), `game (${platform})`);
         });
 
         // auto-detect game install locations across steam/epic/xbox
