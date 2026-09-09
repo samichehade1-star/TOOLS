@@ -20,6 +20,11 @@ publish/
 _installer/staging/
 _installer/dist/
 
+# Python build artifacts
+__pycache__/
+*.pyc
+Tile Auto-Presser/config.json
+
 # OS/editor cruft
 Thumbs.db
 .DS_Store
