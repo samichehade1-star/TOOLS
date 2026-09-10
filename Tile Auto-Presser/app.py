@@ -46,7 +46,7 @@ TEMPLATE_ROOT = os.path.join(BASE_DIR, "templates")
 LOG_PATH = os.path.join(BASE_DIR, "session.log")
 
 # ---------- Auto-update (GitHub Releases) ----------
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 UPDATE_REPO = "samichehade1-star/tile-auto-presser"
 UPDATE_ASSET_NAME = "TileAutoPresser.exe"
 
@@ -128,7 +128,13 @@ def apply_update(new_exe_path):
     os._exit(0)
 
 DEFAULT_CONFIG = {
-    "region": None,
+    # Region/mash_region below match the developer's own tuned setup (a
+    # specific monitor resolution + game window position) -- they're shipped
+    # as the out-of-box default so most people never have to touch Step 1,
+    # but anyone on a different resolution/window layout should still hit
+    # "Use Whole Screen" (or redo Select Region) rather than assume these
+    # pixel coordinates line up with their own screen.
+    "region": {"left": 645, "top": 410, "width": 711, "height": 509},
     "poll_interval_ms": 5,
     "match_threshold": 0.75,
     "key_hold_ms": 40,
@@ -143,16 +149,16 @@ DEFAULT_CONFIG = {
     "hotkey_reboot_watch": "f9",
     "input_mode": "keyboard",
     "role": "civilian",
-    "confirm_count": 1,
-    "max_refine_candidates": 24,
+    "confirm_count": 2,
+    "max_refine_candidates": 8,
     "stall_log_ms": 250,
-    "mash_region": None,
+    "mash_region": {"left": 776, "top": 506, "width": 367, "height": 251},
     "mash_whole_screen": False,
     "mash_match_threshold": 0.75,
     "mash_template_size": 40,
-    "mash_press_hold_ms": 15,
-    "mash_press_gap_ms": 10,
-    "mash_poll_interval_ms": 5,
+    "mash_press_hold_ms": 4,
+    "mash_press_gap_ms": 2,
+    "mash_poll_interval_ms": 20,
     "mash_min_cell_area": 150,
     "mash_max_refine_candidates": 12,
     "mash_miss_tolerance": 15,
