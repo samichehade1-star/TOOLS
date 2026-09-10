@@ -47,9 +47,11 @@ TEMPLATE_ROOT = os.path.join(BASE_DIR, "templates")
 LOG_PATH = os.path.join(BASE_DIR, "session.log")
 
 # ---------- Auto-update (GitHub Releases) ----------
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 UPDATE_REPO = "samichehade1-star/tile-auto-presser"
-UPDATE_ASSET_NAME = "TileAutoPresser.exe"
+# A zip of the onedir build's folder contents (exe + its DLLs/data), not a
+# bare .exe -- see TileAutoPresser.spec for why this ships as onedir now.
+UPDATE_ASSET_NAME = "TileAutoPresser.zip"
 
 
 def _parse_version(v):
@@ -101,14 +103,17 @@ def download_update(url, dest_path, progress_cb=None):
                     progress_cb(done / total)
 
 
-def apply_update(new_exe_path):
-    """Swaps the running exe for new_exe_path and relaunches it, then exits
-    this process. Windows keeps a running exe's file locked, so this can't
-    just overwrite it directly -- it hands off to a detached helper .bat
-    that waits for our PID to disappear, does the move + relaunch, and then
-    deletes itself.
+def apply_update(new_zip_path):
+    """Extracts new_zip_path (the onedir build's folder contents) over the
+    current install directory and relaunches, then exits this process.
+    Windows keeps the running exe (and possibly other loaded DLLs) locked,
+    so this can't extract in-place directly -- it hands off to a detached
+    helper .bat that waits for our PID to disappear, extracts via
+    PowerShell's Expand-Archive (-Force overwrites existing files), then
+    relaunches and deletes itself.
     """
     current_exe = sys.executable
+    install_dir = os.path.dirname(current_exe)
     pid = os.getpid()
     bat_path = os.path.join(tempfile.gettempdir(), "tileautopresser_update.bat")
     bat = (
@@ -119,7 +124,9 @@ def apply_update(new_exe_path):
         "    timeout /t 1 /nobreak >nul\r\n"
         "    goto wait\r\n"
         ")\r\n"
-        f'move /y "{new_exe_path}" "{current_exe}" >nul\r\n'
+        f'powershell -NoProfile -Command "Expand-Archive -LiteralPath \'{new_zip_path}\' '
+        f"-DestinationPath '{install_dir}' -Force\"\r\n"
+        f'del "{new_zip_path}"\r\n'
         f'start "" "{current_exe}"\r\n'
         'del "%~f0"\r\n'
     )
@@ -131,15 +138,20 @@ def apply_update(new_exe_path):
 DEFAULT_CONFIG = {
     # Region is per-role (see ROLE_LEN_RANGE) since Michael's and civilian's
     # combo tiles can appear at a completely different screen location with
-    # completely different-looking tiles -- nothing is shipped pre-filled
-    # here (not even a specific developer's own setup) since an absolute
-    # screen-pixel region baked in as a default would silently watch the
-    # wrong part of the screen for anyone on a different resolution/window
-    # layout. Each role's Step 1 must be done at least once, per role.
+    # completely different-looking tiles. No absolute screen-pixel region is
+    # ever hardcoded here (that would silently watch the wrong part of the
+    # screen on a different resolution) -- instead, whole_screen_* defaults
+    # to True, and _auto_provision_whole_screen_regions() (called once at
+    # startup) fills in region_* from whatever monitor the app is actually
+    # running on, on that PC, the first time it finds one missing. Michael
+    # ships with real calibrated templates (see templates/), so it works out
+    # of the box on any resolution; civilian has no real tiles calibrated
+    # yet, so its templates are intentionally empty until someone captures
+    # them via Start Calibration.
     "region_michael": None,
     "region_civilian": None,
-    "whole_screen_michael": False,
-    "whole_screen_civilian": False,
+    "whole_screen_michael": True,
+    "whole_screen_civilian": True,
     "poll_interval_ms": 5,
     "match_threshold": 0.75,
     "key_hold_ms": 40,
@@ -152,21 +164,25 @@ DEFAULT_CONFIG = {
     "hotkey_toggle_calibration": "f7",
     "hotkey_reboot_watch": "f9",
     "input_mode": "keyboard",
-    "role": "civilian",
-    "confirm_count": 1,
-    "max_refine_candidates": 24,
+    "role": "michael",
+    "confirm_count": 2,
+    "max_refine_candidates": 8,
     "stall_log_ms": 250,
+    # mash_region is NOT preset -- unlike whole-screen regions above, it's
+    # always a specific hand-picked sub-region (never "whole screen" here),
+    # so there's no resolution-independent way to auto-provision it. Each
+    # install still needs its own Mash Step 1.
     "mash_region": None,
     "mash_whole_screen": False,
     "mash_match_threshold": 0.75,
     "mash_template_size": 40,
-    "mash_press_hold_ms": 15,
-    "mash_press_gap_ms": 10,
-    "mash_poll_interval_ms": 5,
+    "mash_press_hold_ms": 4,
+    "mash_press_gap_ms": 2,
+    "mash_poll_interval_ms": 20,
     "mash_min_cell_area": 150,
     "mash_max_refine_candidates": 12,
     "mash_miss_tolerance": 15,
-    "mash_burst_ms": 2500,
+    "mash_burst_ms": 8000,
     "hotkey_toggle_mash_calibration": "f5",
     "hotkey_toggle_mash_watch": "f6",
 }
@@ -327,9 +343,46 @@ def migrate_legacy_templates():
                 os.remove(src)
 
 
+def _auto_provision_whole_screen_regions(cfg):
+    """Fills in region_<role> from the current monitor for any role whose
+    whole_screen_<role> is True but region_<role> is still unset -- e.g. a
+    fresh install, where DEFAULT_CONFIG sets whole_screen_* to True but
+    can't know screen size in advance. Doing this dynamically (vs. shipping
+    a hardcoded region) is what makes "whole screen" actually work out of
+    the box on whatever resolution the app happens to be running on, rather
+    than only on the resolution it happened to be built/tested on.
+    """
+    changed = False
+    for role in ROLE_LEN_RANGE:
+        if cfg.get(f"whole_screen_{role}") and not cfg.get(f"region_{role}"):
+            with mss.mss() as sct:
+                monitor = sct.monitors[1]
+            cfg[f"region_{role}"] = {
+                "left": monitor["left"],
+                "top": monitor["top"],
+                "width": monitor["width"],
+                "height": monitor["height"],
+            }
+            changed = True
+    if changed:
+        save_config(cfg)
+
+
 def _timestamp_ms():
     now = time.time()
     return f"{time.strftime('%H:%M:%S', time.localtime(now))}.{int(now % 1 * 1000):03d}"
+
+
+def _center_square(box):
+    # Shrinks a box to a centered square using its smaller side -- a no-op
+    # for a box that's already square, and what turns a wide prompt bar
+    # (see below) into just its icon glyph instead of squashing the whole
+    # bar, background padding included, into a square and diluting/
+    # distorting the glyph past recognition.
+    x, y, w, h = box
+    side = min(w, h)
+    cx, cy = x + w / 2.0, y + h / 2.0
+    return (int(cx - side / 2.0), int(cy - side / 2.0), side, side)
 
 
 def find_mash_cell(gray, size, min_area, max_refine):
@@ -349,6 +402,21 @@ def find_mash_cell(gray, size, min_area, max_refine):
         # Retrying inverted catches that polarity too.
         boxes = find_tile_boxes(gray, min_area, max_refine=max_refine, invert=True)
     if not boxes:
+        # Some prompts render as a wide horizontal bar with a small icon
+        # centered in it (observed live: a mouse-click prompt ~7:1
+        # width:height) instead of a roughly-square tile -- the square-only
+        # aspect filter above never sees these as candidates at all, so
+        # calibration never even pops the labeling dialog for them. Retried
+        # here (both polarities) with a much wider aspect range accepted;
+        # the actual crop below still reduces it to just the centered
+        # square glyph, so this doesn't relax what gets matched, only what
+        # gets detected as a candidate in the first place.
+        boxes = find_tile_boxes(gray, min_area, max_refine=max_refine, min_aspect=0.15, max_aspect=8.0)
+        if not boxes:
+            boxes = find_tile_boxes(
+                gray, min_area, max_refine=max_refine, invert=True, min_aspect=0.15, max_aspect=8.0,
+            )
+    if not boxes:
         return None
     h, w = gray.shape[:2]
     cx, cy = w / 2.0, h / 2.0
@@ -357,7 +425,7 @@ def find_mash_cell(gray, size, min_area, max_refine):
         bx, by, bw, bh = box
         return (bx + bw / 2.0 - cx) ** 2 + (by + bh / 2.0 - cy) ** 2
 
-    box = min(boxes, key=dist_from_center)
+    box = _center_square(min(boxes, key=dist_from_center))
     return crop_cell(gray, box, size, keep_frac=1.0)
 
 
@@ -476,6 +544,7 @@ class App:
 
         migrate_legacy_templates()
         self.config = load_config()
+        _auto_provision_whole_screen_regions(self.config)
         self.log_queue = queue.Queue()
 
         self.watch_thread = None
@@ -822,7 +891,7 @@ class App:
 
     def _run_update(self, url):
         try:
-            dest = os.path.join(tempfile.gettempdir(), "TileAutoPresser.new.exe")
+            dest = os.path.join(tempfile.gettempdir(), "TileAutoPresser.new.zip")
             last_pct = -1
 
             def progress(frac):
@@ -906,7 +975,7 @@ class App:
         region = self.config.get(f"region_{role}")
         if not region:
             self._thumb_image = None
-            self.thumb_label.configure(image=None, text="No region\nselected", text_color=TEXT_MUTED)
+            self.thumb_label.configure(image=None, text=f"No region\nselected ({role})", text_color=TEXT_MUTED)
             return
         try:
             with mss.mss() as sct:
@@ -917,7 +986,13 @@ class App:
             cimg = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=pil_img.size)
             self._thumb_image = cimg
             self.thumb_label.configure(image=cimg, text="")
-        except Exception:
+        except Exception as e:
+            # Was silently swallowed before -- with no log line and no
+            # detail in the fallback text, "Preview unavailable" gave no way
+            # to tell a real capture failure apart from a bad region, a
+            # DXGI/mss error, or anything else. Logging the actual exception
+            # is what makes this diagnosable at all.
+            self.log(f"Thumbnail preview error ({role}): {e}")
             self._thumb_image = None
             self.thumb_label.configure(image=None, text="Preview\nunavailable", text_color=TEXT_MUTED)
 

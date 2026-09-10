@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 
 
-def find_tile_boxes(gray, min_area, detect_scale=0.5, max_refine=60, invert=False):
+def find_tile_boxes(gray, min_area, detect_scale=0.5, max_refine=60, invert=False, min_aspect=0.7, max_aspect=1.4):
     """Find bright rounded-rectangle tile boxes in a grayscale image.
 
     Returns a list of (x, y, w, h) boxes in the ORIGINAL (full-resolution)
@@ -62,7 +62,7 @@ def find_tile_boxes(gray, min_area, detect_scale=0.5, max_refine=60, invert=Fals
         if area < min_area_scaled:
             continue
         aspect = w / float(h)
-        if aspect < 0.7 or aspect > 1.4:
+        if aspect < min_aspect or aspect > max_aspect:
             continue
         approx_boxes.append((int(x * inv), int(y * inv), int(w * inv), int(h * inv)))
 

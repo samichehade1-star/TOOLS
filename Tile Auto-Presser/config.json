@@ -1,0 +1,51 @@
+{
+    "poll_interval_ms": 5,
+    "match_threshold": 0.75,
+    "key_hold_ms": 40,
+    "key_gap_ms": 55,
+    "min_cell_area": 150,
+    "row_cluster_tolerance_px": 18,
+    "template_size": 40,
+    "min_sequence_length": 2,
+    "hotkey_toggle_watch": "f8",
+    "hotkey_toggle_calibration": "f7",
+    "hotkey_reboot_watch": "f9",
+    "input_mode": "controller",
+    "confirm_count": 2,
+    "max_refine_candidates": 8,
+    "stall_log_ms": 250,
+    "mash_region": {
+        "left": 776,
+        "top": 506,
+        "width": 367,
+        "height": 251
+    },
+    "mash_match_threshold": 0.75,
+    "mash_template_size": 40,
+    "mash_press_hold_ms": 4,
+    "mash_press_gap_ms": 2,
+    "mash_poll_interval_ms": 20,
+    "mash_blank_std_threshold": 10,
+    "mash_miss_tolerance": 15,
+    "hotkey_toggle_mash_calibration": "f5",
+    "hotkey_toggle_mash_watch": "f6",
+    "mash_min_cell_area": 150,
+    "mash_max_refine_candidates": 12,
+    "mash_whole_screen": false,
+    "role": "michael",
+    "region_michael": {
+        "left": 632,
+        "top": 419,
+        "width": 741,
+        "height": 524
+    },
+    "region_civilian": {
+        "left": 0,
+        "top": 0,
+        "width": 1920,
+        "height": 1080
+    },
+    "whole_screen_michael": false,
+    "whole_screen_civilian": true,
+    "mash_burst_ms": 8000
+}

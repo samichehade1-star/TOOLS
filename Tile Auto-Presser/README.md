@@ -9,14 +9,17 @@ available.
 
 ## Just run it
 
-Double-click **`TileAutoPresser.exe`**. No command line, no Python needed.
+Download **`TileAutoPresser.zip`**, extract it anywhere, then double-click
+**`TileAutoPresser.exe`** inside the extracted folder. No command line, no
+Python needed. (It ships as a folder, not a single .exe, on purpose — see
+"Why a folder, not a single .exe?" below.)
 
-**Role and region/templates are calibrated separately for Michael and
-Civilian** — their combo tiles look different and can appear in a completely
-different screen location, so one shared calibration can't cover both.
-Nothing ships pre-filled for either role: Step 1 (region) and Step 2
-(templates) must each be done once per role before that role's Start
-Watching will work.
+**Michael** ships pre-calibrated and ready to go — region defaults to
+whatever monitor you're running on (auto-detected on first launch, not a
+hardcoded resolution) and its templates are already trained. **Civilian**
+has no real tiles calibrated yet (its combo tiles look different from
+Michael's), so Step 1 (region) and Step 2 (templates) still need doing once
+for that role before its Start Watching will work.
 
 Steps, once per role:
 
@@ -78,7 +81,7 @@ Setup is the same shape as the Main tab, scoped to this puzzle:
    is focused, Windows won't hand this background popup real keyboard focus,
    so a pressed key silently goes to the game instead of the dialog.
 3. **Run** (hotkey **F6**) — as soon as it sees a known icon, it mashes that
-   icon non-stop for a fixed burst (`mash_burst_ms`, default 2.5s), then
+   icon non-stop for a fixed burst (`mash_burst_ms`, default 8s), then
    **stops on its own**. F6 only needs pressing once, right before the
    puzzle appears -- no need to remember to toggle it back off.
 
@@ -88,15 +91,15 @@ Setup is the same shape as the Main tab, scoped to this puzzle:
    stretch (animation, a busy scan region, etc.), which kept cutting mashing
    short mid-puzzle. Mashing straight through the whole burst regardless of
    what the detector reports fixes that. If the puzzle genuinely needs
-   longer than 2.5s, raise `mash_burst_ms`; if Run is finishing before the
-   puzzle even appears, that's usually a sign the icon it locked onto is
-   stale/wrong -- redo Step 2 for that icon.
+   longer than 8s, raise `mash_burst_ms`; if Run is finishing well after the
+   puzzle's actually done, that wastes real time doing nothing useful --
+   lower it instead.
 
 Since it's beta, expect this one to need more tuning than the Main tab.
 Knobs in `config.json`:
 - `mash_match_threshold` / `mash_template_size` control matching the same
   way `match_threshold` does for the Main tab.
-- `mash_burst_ms` (default 2500) is how long, in milliseconds, one Run
+- `mash_burst_ms` (default 8000) is how long, in milliseconds, one Run
   press mashes for once it locks onto an icon, before stopping itself.
 - `mash_press_hold_ms` / `mash_press_gap_ms` control the spam rate (default
   15ms hold / 10ms gap). Push lower if the game keeps up; back off if
@@ -212,13 +215,30 @@ for both keyboard and controller modes before shipping.
   hook can trip this) -- the app re-arms all hotkeys automatically every 45s
   to recover from that, so a hotkey going dead mid-session should fix itself
   within that window.
-  **Do not run `TileAutoPresser.exe` as Administrator** to try to fix this —
-  on some systems that triggers an unrelated PyInstaller bootloader bug
-  ("Security validation failure: failed to obtain executable path for
-  parent process!") that prevents the app from starting at all. If the game
-  itself runs elevated and hotkeys still don't respond even after the
-  45s re-arm, that's a real limitation of running unelevated, not something
-  this tool can currently work around.
+  Running as Administrator is safe now (see "Why a folder, not a single
+  .exe?" below) if the game itself runs elevated and hotkeys still don't
+  respond even after the 45s re-arm.
+
+## Why a folder, not a single .exe?
+
+Earlier releases shipped as one portable `.exe` (PyInstaller's "onefile"
+mode). Onefile secretly launches itself twice -- a hidden "parent" process
+that extracts everything to a temp folder, then a "child" process that's
+the actual app -- and starting with PyInstaller 6.22.1, that handoff
+includes a security check that runs whenever the exe is elevated
+(Administrator): it looks up the parent process and verifies it's the same
+executable. On some systems that lookup itself fails for a completely
+legitimate launch, and the bootloader treats that as fatal: "Security
+validation failure: failed to obtain executable path for parent process!"
+-- the app refuses to start at all. Telling people not to run as
+Administrator didn't fully fix this: some downloads apparently got
+elevated some other way, and anyone whose game itself runs elevated
+genuinely needs to run this tool elevated too, which crashed every time.
+
+Onedir mode (a folder containing the exe + its files, no hidden
+extraction step) has no such parent/child handoff, so that entire check
+never runs -- fixed for everyone, elevated or not. The cost is a `.zip` to
+extract instead of one file to double-click.
 
 ## Rebuilding the .exe (only needed if you edit the .py files)
 
@@ -227,6 +247,11 @@ pip install -r requirements.txt pyinstaller
 ```
 Then:
 ```
-python -m PyInstaller --onefile --noconsole --name TileAutoPresser app.py
+python -m PyInstaller TileAutoPresser.spec --noconfirm
 ```
+The rebuilt onedir app appears in `dist/TileAutoPresser/` (the folder, not
+a single file -- see "Why a folder, not a single .exe?" above). Zip that
+folder's *contents* (not the folder itself) to `TileAutoPresser.zip` for
+distribution/auto-update -- the in-app updater extracts it directly into
+the install directory.
 The new exe will be in `dist/`.
