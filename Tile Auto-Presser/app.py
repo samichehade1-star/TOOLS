@@ -9,6 +9,7 @@ import ctypes
 import json
 import os
 import queue
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -46,7 +47,7 @@ TEMPLATE_ROOT = os.path.join(BASE_DIR, "templates")
 LOG_PATH = os.path.join(BASE_DIR, "session.log")
 
 # ---------- Auto-update (GitHub Releases) ----------
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.1.0"
 UPDATE_REPO = "samichehade1-star/tile-auto-presser"
 UPDATE_ASSET_NAME = "TileAutoPresser.exe"
 
@@ -128,13 +129,17 @@ def apply_update(new_exe_path):
     os._exit(0)
 
 DEFAULT_CONFIG = {
-    # Region/mash_region below match the developer's own tuned setup (a
-    # specific monitor resolution + game window position) -- they're shipped
-    # as the out-of-box default so most people never have to touch Step 1,
-    # but anyone on a different resolution/window layout should still hit
-    # "Use Whole Screen" (or redo Select Region) rather than assume these
-    # pixel coordinates line up with their own screen.
-    "region": {"left": 645, "top": 410, "width": 711, "height": 509},
+    # Region is per-role (see ROLE_LEN_RANGE) since Michael's and civilian's
+    # combo tiles can appear at a completely different screen location with
+    # completely different-looking tiles -- nothing is shipped pre-filled
+    # here (not even a specific developer's own setup) since an absolute
+    # screen-pixel region baked in as a default would silently watch the
+    # wrong part of the screen for anyone on a different resolution/window
+    # layout. Each role's Step 1 must be done at least once, per role.
+    "region_michael": None,
+    "region_civilian": None,
+    "whole_screen_michael": False,
+    "whole_screen_civilian": False,
     "poll_interval_ms": 5,
     "match_threshold": 0.75,
     "key_hold_ms": 40,
@@ -143,25 +148,25 @@ DEFAULT_CONFIG = {
     "row_cluster_tolerance_px": 18,
     "template_size": 40,
     "min_sequence_length": 2,
-    "whole_screen": False,
     "hotkey_toggle_watch": "f8",
     "hotkey_toggle_calibration": "f7",
     "hotkey_reboot_watch": "f9",
     "input_mode": "keyboard",
     "role": "civilian",
-    "confirm_count": 2,
-    "max_refine_candidates": 8,
+    "confirm_count": 1,
+    "max_refine_candidates": 24,
     "stall_log_ms": 250,
-    "mash_region": {"left": 776, "top": 506, "width": 367, "height": 251},
+    "mash_region": None,
     "mash_whole_screen": False,
     "mash_match_threshold": 0.75,
     "mash_template_size": 40,
-    "mash_press_hold_ms": 4,
-    "mash_press_gap_ms": 2,
-    "mash_poll_interval_ms": 20,
+    "mash_press_hold_ms": 15,
+    "mash_press_gap_ms": 10,
+    "mash_poll_interval_ms": 5,
     "mash_min_cell_area": 150,
     "mash_max_refine_candidates": 12,
     "mash_miss_tolerance": 15,
+    "mash_burst_ms": 2500,
     "hotkey_toggle_mash_calibration": "f5",
     "hotkey_toggle_mash_watch": "f6",
 }
@@ -230,8 +235,14 @@ LOG_ERROR = "#f87171"
 LOG_SUCCESS = "#2dd4bf"
 
 
-def template_dir_for(mode):
-    return os.path.join(TEMPLATE_ROOT, mode)
+def template_dir_for(mode, role=None):
+    # Main-tab modes (keyboard/controller) are further split by role --
+    # Michael's and civilian's tiles can look completely different even
+    # within the same input mode, so they can't share one template set.
+    # The Mash tab has no role concept and calls this with role=None.
+    if role is None:
+        return os.path.join(TEMPLATE_ROOT, mode)
+    return os.path.join(TEMPLATE_ROOT, mode, role)
 
 
 def keep_frac_for(mode):
@@ -265,12 +276,55 @@ def load_config():
         cfg = json.load(f)
     for k, v in DEFAULT_CONFIG.items():
         cfg.setdefault(k, v)
+
+    # Migrate a pre-role-split config (one shared "region"/"whole_screen") so
+    # upgrading never blanks out someone's existing, working calibration.
+    # Seed ONLY "civilian" (the pre-existing default role) from it -- seeding
+    # "michael" too would silently hand it a region that's actively wrong
+    # (Michael's tiles appear in a different screen location), which is
+    # worse than correctly prompting for Michael's own Step 1/Step 2. Mirrors
+    # migrate_legacy_templates()'s civilian-only choice for the same reason.
+    legacy_region = cfg.pop("region", None)
+    legacy_whole = cfg.pop("whole_screen", None)
+    if legacy_region and not cfg.get("region_civilian"):
+        cfg["region_civilian"] = legacy_region
+        cfg["whole_screen_civilian"] = bool(legacy_whole)
+
     return cfg
 
 
 def save_config(cfg):
     with open(CONFIG_PATH, "w") as f:
         json.dump(cfg, f, indent=4)
+
+
+def migrate_legacy_templates():
+    """Moves pre-role-split template PNGs (templates/<mode>/*.png) into
+    templates/<mode>/civilian/ (the pre-existing default role) so an
+    existing calibration keeps working after upgrading. Deliberately does
+    NOT also copy them into .../michael/ -- Michael's tiles look different,
+    so that role needs its own real calibration rather than a guess seeded
+    from civilian's crops.
+    """
+    for mode in ("keyboard", "controller"):
+        mode_dir = os.path.join(TEMPLATE_ROOT, mode)
+        if not os.path.isdir(mode_dir):
+            continue
+        flat_pngs = [
+            f for f in os.listdir(mode_dir)
+            if f.endswith(".png") and os.path.isfile(os.path.join(mode_dir, f))
+        ]
+        if not flat_pngs:
+            continue
+        civilian_dir = os.path.join(mode_dir, "civilian")
+        os.makedirs(civilian_dir, exist_ok=True)
+        for fname in flat_pngs:
+            src = os.path.join(mode_dir, fname)
+            dst = os.path.join(civilian_dir, fname)
+            if not os.path.exists(dst):
+                shutil.move(src, dst)
+            else:
+                os.remove(src)
 
 
 def _timestamp_ms():
@@ -420,6 +474,7 @@ class App:
         # like a problem with the tool itself.
         root.after(1500, lambda: threading.Thread(target=self._background_update_check, daemon=True).start())
 
+        migrate_legacy_templates()
         self.config = load_config()
         self.log_queue = queue.Queue()
 
@@ -825,7 +880,8 @@ class App:
             w.destroy()
         self.chip_widgets = {}
         mode = self.config.get("input_mode", "keyboard")
-        templates = load_templates(self.config["template_size"], template_dir_for(mode))
+        role = self.config.get("role", "civilian")
+        templates = load_templates(self.config["template_size"], template_dir_for(mode, role))
         have = set(templates.keys())
         for label in sorted(REQUIRED_LABELS[mode]):
             done = label in have
@@ -846,7 +902,8 @@ class App:
             self.chip_widgets[label] = chip
 
     def update_thumbnail(self):
-        region = self.config.get("region")
+        role = self.config.get("role", "civilian")
+        region = self.config.get(f"region_{role}")
         if not region:
             self._thumb_image = None
             self.thumb_label.configure(image=None, text="No region\nselected", text_color=TEXT_MUTED)
@@ -865,23 +922,27 @@ class App:
             self.thumb_label.configure(image=None, text="Preview\nunavailable", text_color=TEXT_MUTED)
 
     def refresh_region_buttons(self):
-        whole = bool(self.config.get("whole_screen"))
-        has_region = bool(self.config.get("region"))
+        role = self.config.get("role", "civilian")
+        whole = bool(self.config.get(f"whole_screen_{role}"))
+        has_region = bool(self.config.get(f"region_{role}"))
         self.whole_screen_btn.configure(border_color=ACCENT_TEAL if whole else BG_CHIP)
         self.select_region_btn.configure(border_color=ACCENT_TEAL if (has_region and not whole) else BG_CHIP)
 
     def region_text(self):
-        r = self.config.get("region")
+        role = self.config.get("role", "civilian")
+        r = self.config.get(f"region_{role}")
         if not r:
-            return "No region selected yet"
-        if self.config.get("whole_screen"):
-            return f"Watching whole screen ({r['width']}x{r['height']})"
-        return f"Region set: {r['width']}x{r['height']} at ({r['left']},{r['top']})"
+            return f"No region selected yet for {role.capitalize()}"
+        if self.config.get(f"whole_screen_{role}"):
+            return f"{role.capitalize()}: watching whole screen ({r['width']}x{r['height']})"
+        return f"{role.capitalize()}: region set {r['width']}x{r['height']} at ({r['left']},{r['top']})"
 
     def step2_title(self):
         mode = self.config.get("input_mode", "keyboard")
+        role = self.config.get("role", "civilian")
         needed = ", ".join(sorted(REQUIRED_LABELS[mode]))
-        return f"Step 2: Teach {'digits' if mode == 'keyboard' else 'buttons'} {needed}"
+        kind = "digits" if mode == "keyboard" else "buttons"
+        return f"Step 2: Teach {role.capitalize()}'s {kind} {needed}"
 
     def on_input_mode_change(self, selected_value):
         mode = self._seg_to_mode.get(selected_value, "keyboard")
@@ -895,6 +956,14 @@ class App:
         role = self._seg_to_role.get(selected_value, "civilian")
         self.config["role"] = role
         save_config(self.config)
+        # Region and templates are both per-role -- refresh every bit of
+        # Step 1/Step 2 UI that reflects them, same as switching input mode
+        # already refreshes Step 2's chips.
+        self.step2_title_label.configure(text=self.step2_title())
+        self.build_calibration_chips()
+        self.region_caption.configure(text=self.region_text())
+        self.refresh_region_buttons()
+        self.update_thumbnail()
         self.log(f"Role: {role}")
 
     def log(self, msg):
@@ -1008,31 +1077,49 @@ class App:
         dlg.grab_set()
 
     def register_hotkeys(self):
+        # unhook_all() first so this is safe to call repeatedly (see
+        # _rearm_hotkeys below) -- re-adding the same hotkey without removing
+        # it first stacks a second hook, which fires the action twice per
+        # press instead of fixing anything.
+        keyboard.unhook_all()
         self._register_hotkey(self.config.get("hotkey_toggle_watch", "f8"), self.toggle_watch)
         self._register_hotkey(self.config.get("hotkey_toggle_calibration", "f7"), self.toggle_calibration)
         self._register_hotkey(self.config.get("hotkey_reboot_watch", "f9"), self.reboot_watch)
         self._register_hotkey(self.config.get("hotkey_toggle_mash_calibration", "f5"), self.toggle_mash_calibration)
         self._register_hotkey(self.config.get("hotkey_toggle_mash_watch", "f6"), self.toggle_mash_watch)
+        # Windows silently tears down a low-level keyboard hook (what the
+        # `keyboard` library relies on) if its callback doesn't return fast
+        # enough -- easy to trip under this app's own load (a busy detection
+        # scan, or a mash burst pushing 100+ synthetic key events/sec through
+        # the same hook), and once that happens every hotkey goes dead with
+        # no error, until something re-registers them. Re-arming on a timer
+        # recovers from that automatically instead of leaving the user
+        # wondering why F8 "just stopped working" mid-session.
+        self.root.after(45000, self._rearm_hotkeys)
+
+    def _rearm_hotkeys(self):
+        self.register_hotkeys()
 
     def _register_hotkey(self, hotkey, action):
         try:
             keyboard.add_hotkey(hotkey, lambda: self.root.after(0, action))
         except Exception as e:
-            self.log(f"Error: hotkey {hotkey.upper()} failed ({e}). Try running as administrator.")
+            self.log(f"Error: hotkey {hotkey.upper()} failed ({e}).")
 
     # ---------- Step 1 ----------
     def use_whole_screen(self):
+        role = self.config.get("role", "civilian")
         with mss.mss() as sct:
             monitor = sct.monitors[1]
-        self.config["region"] = {
+        self.config[f"region_{role}"] = {
             "left": monitor["left"],
             "top": monitor["top"],
             "width": monitor["width"],
             "height": monitor["height"],
         }
-        self.config["whole_screen"] = True
+        self.config[f"whole_screen_{role}"] = True
         save_config(self.config)
-        self.log(f"Capture: {monitor['width']}x{monitor['height']} (whole screen)")
+        self.log(f"Capture ({role}): {monitor['width']}x{monitor['height']} (whole screen)")
         self.region_caption.configure(text=self.region_text())
         self.refresh_region_buttons()
         self.update_thumbnail()
@@ -1042,25 +1129,26 @@ class App:
         # windows need to live on the same thread as their event loop, otherwise
         # they can fail to take keyboard/mouse focus, same issue the calibration
         # popup used to have.
+        role = self.config.get("role", "civilian")
         with mss.mss() as sct:
             monitor = sct.monitors[1]
             shot = np.array(sct.grab(monitor))
         img = cv2.cvtColor(shot, cv2.COLOR_BGRA2BGR)
-        box = cv2.selectROI("Drag a box around the tile row, then press ENTER", img, showCrosshair=True)
+        box = cv2.selectROI(f"Drag a box around {role.capitalize()}'s tile row, then press ENTER", img, showCrosshair=True)
         cv2.destroyAllWindows()
         x, y, w, h = [int(v) for v in box]
         if w == 0 or h == 0:
             self.log("Region selection cancelled.")
             return
-        self.config["region"] = {
+        self.config[f"region_{role}"] = {
             "left": monitor["left"] + x,
             "top": monitor["top"] + y,
             "width": w,
             "height": h,
         }
-        self.config["whole_screen"] = False
+        self.config[f"whole_screen_{role}"] = False
         save_config(self.config)
-        self.log(f"Capture: {w}x{h} region")
+        self.log(f"Capture ({role}): {w}x{h} region")
         self.region_caption.configure(text=self.region_text())
         self.refresh_region_buttons()
         self.update_thumbnail()
@@ -1416,34 +1504,48 @@ class App:
             grabber.close()
 
     def run_mash_press_loop(self):
-        # Manual stop only: the detector reporting "gone" no longer stops
-        # the presser at all -- it only ever LOCKS ONTO a new label when the
-        # detector finds one. Vision-based auto-stop kept tripping on
-        # detection flicker (icons dropping out for 100-200ms+ at a time,
-        # measured live -- longer than any reasonable miss-tolerance window)
-        # and cutting mashing short mid-QTE. Once locked onto a label this
-        # keeps mashing it no matter what the detector reports, until the
-        # user hits Run/F6 again themselves (self.mash_watch_stop).
+        # Locking onto a label now starts one fixed, uninterrupted mash burst
+        # (mash_burst_ms, default 2.5s) instead of mashing indefinitely until
+        # the user remembers to toggle F6 back off. Vision-based auto-stop
+        # (stop as soon as the icon looks "gone") kept tripping on detection
+        # flicker -- icons dropping out for 100-200ms+ at a time, measured
+        # live, longer than any reasonable miss-tolerance window -- and cut
+        # mashing short mid-QTE. A fixed burst ignores the detector entirely
+        # once locked on (mashes straight through any flicker) and turns
+        # Mash off on its own when the burst ends, so F6 only needs pressing
+        # once, right before the puzzle appears.
         cfg = self.config
         hold_s, gap_s = cfg["mash_press_hold_ms"] / 1000.0, cfg["mash_press_gap_ms"] / 1000.0
+        burst_s = cfg.get("mash_burst_ms", 2500) / 1000.0
         active_label = None
         burst_start = None
         burst_presses = 0
+        auto_stopped = False
         try:
             while not self.mash_watch_stop.is_set():
-                seen_label = self._mash_active_label
-                if seen_label is not None and seen_label != active_label:
+                if active_label is None:
+                    seen_label = self._mash_active_label
+                    if seen_label is None:
+                        time.sleep(0.02)
+                        continue
                     active_label = seen_label
                     self.log(f"Mashing {active_label}")
                     burst_start = time.perf_counter()
                     burst_presses = 0
-                if active_label is None:
-                    time.sleep(0.02)
-                    continue
+                if time.perf_counter() - burst_start >= burst_s:
+                    auto_stopped = True
+                    break
                 press_mash_input(active_label, hold_s, gap_s)
                 burst_presses += 1
         except Exception as e:
             self.log(f"Mash press error: {e}")
+
+        if auto_stopped:
+            # Ends the paired detector loop too, same as a manual Stop --
+            # otherwise it'd keep running with nothing left reading its
+            # output, and a later Run press would stack a second detector on
+            # top of it instead of cleanly restarting.
+            self.mash_watch_stop.set()
 
         if active_label is not None:
             # Sent rate over the whole run (not the nominal hold+gap rate)
@@ -1453,8 +1555,9 @@ class App:
             # some sent rate, completion time stops improving.
             elapsed = time.perf_counter() - burst_start
             rate = burst_presses / elapsed if elapsed > 0 else 0.0
+            reason = f"{burst_s:.1f}s burst" if auto_stopped else "manual"
             self.log(
-                f"Mashing stopped (manual) -- "
+                f"Mashing stopped ({reason}) -- "
                 f"sent {burst_presses} presses of {active_label} in {elapsed:.2f}s (~{rate:.0f}/s)"
             )
         else:
@@ -1472,8 +1575,9 @@ class App:
                 self.calib_dialog.destroy()
                 self.calib_dialog = None
             return
-        if not self.config.get("region"):
-            messagebox.showwarning("No region", "Select the screen region first (Step 1).")
+        role = self.config.get("role", "civilian")
+        if not self.config.get(f"region_{role}"):
+            messagebox.showwarning("No region", f"Select {role.capitalize()}'s screen region first (Step 1).")
             return
         self.calibrate_stop.clear()
         self.calibrate_btn.configure(text="Stop Calibration")
@@ -1483,8 +1587,9 @@ class App:
     def run_calibration(self):
         cfg = self.config
         mode = cfg.get("input_mode", "keyboard")
+        role = cfg.get("role", "civilian")
         required = REQUIRED_LABELS[mode]
-        template_dir = template_dir_for(mode)
+        template_dir = template_dir_for(mode, role)
         size = cfg["template_size"]
         threshold = match_threshold_for(mode, cfg["match_threshold"])
         min_area, tol = cfg["min_cell_area"], cfg["row_cluster_tolerance_px"]
@@ -1492,9 +1597,9 @@ class App:
         max_refine = cfg.get("max_refine_candidates", 24)
         os.makedirs(template_dir, exist_ok=True)
         templates = load_templates(size, template_dir)
-        region = cfg["region"]
+        region = cfg[f"region_{role}"]
         grabber = Grabber(region)
-        self.log(f"Calibrating ({mode}): {grabber.backend}, {region['width']}x{region['height']}")
+        self.log(f"Calibrating ({mode}, {role}): {grabber.backend}, {region['width']}x{region['height']}")
         try:
             while not self.calibrate_stop.is_set():
                 if required.issubset(templates.keys()):
@@ -1571,12 +1676,13 @@ class App:
         threading.Thread(target=do_reboot, daemon=True).start()
 
     def _start_watch(self):
-        if not self.config.get("region"):
-            messagebox.showwarning("No region", "Select the screen region first (Step 1).")
+        role = self.config.get("role", "civilian")
+        if not self.config.get(f"region_{role}"):
+            messagebox.showwarning("No region", f"Select {role.capitalize()}'s screen region first (Step 1).")
             return
         mode = self.config.get("input_mode", "keyboard")
         required = REQUIRED_LABELS[mode]
-        templates = load_templates(self.config["template_size"], template_dir_for(mode))
+        templates = load_templates(self.config["template_size"], template_dir_for(mode, role))
         if not required.issubset(templates.keys()):
             messagebox.showwarning("Not calibrated", f"Capture templates for {sorted(required)} first (Step 2).")
             return
@@ -1590,16 +1696,17 @@ class App:
     def run_watch(self):
         cfg = self.config
         mode = cfg.get("input_mode", "keyboard")
+        role = cfg.get("role", "civilian")
         size = cfg["template_size"]
         threshold = match_threshold_for(mode, cfg["match_threshold"])
         min_area, tol = cfg["min_cell_area"], cfg["row_cluster_tolerance_px"]
-        role_min, role_max = ROLE_LEN_RANGE.get(cfg.get("role", "civilian"), (None, None))
+        role_min, role_max = ROLE_LEN_RANGE.get(role, (None, None))
         min_len = role_min if role_min is not None else cfg.get("min_sequence_length", 2)
         max_len = role_max
         poll_s = cfg["poll_interval_ms"] / 1000.0
         hold_s, gap_s = cfg["key_hold_ms"] / 1000.0, cfg["key_gap_ms"] / 1000.0
-        region = cfg["region"]
-        templates = load_templates(size, template_dir_for(mode))
+        region = cfg[f"region_{role}"]
+        templates = load_templates(size, template_dir_for(mode, role))
         confirm_count = cfg.get("confirm_count", 1)
         max_refine = cfg.get("max_refine_candidates", 24)
         stall_log_s = cfg.get("stall_log_ms", 40) / 1000.0
@@ -1607,7 +1714,7 @@ class App:
         pending_seq = None
         pending_count = 0
         grabber = Grabber(region)
-        self.log(f"Watching ({mode}): {grabber.backend}, {region['width']}x{region['height']}")
+        self.log(f"Watching ({mode}, {role}): {grabber.backend}, {region['width']}x{region['height']}")
         try:
             while not self.watch_stop.is_set():
                 t_grab0 = time.perf_counter()
