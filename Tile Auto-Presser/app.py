@@ -47,7 +47,7 @@ TEMPLATE_ROOT = os.path.join(BASE_DIR, "templates")
 LOG_PATH = os.path.join(BASE_DIR, "session.log")
 
 # ---------- Auto-update (GitHub Releases) ----------
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 UPDATE_REPO = "samichehade1-star/tile-auto-presser"
 # A zip of the onedir build's folder contents (exe + its DLLs/data), not a
 # bare .exe -- see TileAutoPresser.spec for why this ships as onedir now.

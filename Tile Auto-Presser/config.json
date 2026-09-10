@@ -1,6 +1,6 @@
 {
     "poll_interval_ms": 5,
-    "match_threshold": 0.75,
+    "match_threshold": 0.65,
     "key_hold_ms": 40,
     "key_gap_ms": 55,
     "min_cell_area": 150,
@@ -10,7 +10,7 @@
     "hotkey_toggle_watch": "f8",
     "hotkey_toggle_calibration": "f7",
     "hotkey_reboot_watch": "f9",
-    "input_mode": "controller",
+    "input_mode": "keyboard",
     "confirm_count": 2,
     "max_refine_candidates": 8,
     "stall_log_ms": 250,
