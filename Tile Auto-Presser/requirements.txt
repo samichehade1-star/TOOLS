@@ -1,0 +1,8 @@
+mss
+bettercam
+opencv-python
+numpy
+pydirectinput
+keyboard
+Pillow
+customtkinter
