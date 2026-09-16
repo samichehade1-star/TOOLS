@@ -2,7 +2,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
     minimize: () => ipcRenderer.send('minimize-window'),
-    splashFinished: () => ipcRenderer.send('splash-finished'),
     maximize: () => ipcRenderer.send('maximize-window'),
     close: () => ipcRenderer.send('close-window'),
     onFlushBeforeClose: (cb) => ipcRenderer.on('flush-before-close', () => cb()),

@@ -209,26 +209,15 @@ function getGame(id) {
 // window chrome
 // =====================================================================
 
-// The window opens at exactly the splash video's square size — no app chrome
-// or background visible around it — then grows to the real app size once
-// the intro finishes (see the 'splash-finished' handler below). Matches the
-// square crop/frame the splash video is shown in (styles.css .splash-video-frame).
-const SPLASH_WINDOW_SIZE = 620;
-let inSplash = true;
-
 function createWindow() {
     mainWindow = new BrowserWindow({
-        width: SPLASH_WINDOW_SIZE,
-        height: SPLASH_WINDOW_SIZE,
-        resizable: false,
+        width: appState.windowBounds.width || 1180,
+        height: appState.windowBounds.height || 780,
+        minWidth: 980,
+        minHeight: 640,
+        resizable: true,
         frame: false,
         backgroundColor: appState.theme.bgFrom || '#0b0e17',
-        // deliberately NOT show:false + wait-for-ready-to-show here: a hidden
-        // window's video isn't paced to the display's real refresh rate, so
-        // the splash video was blasting through its whole 10s in the
-        // background almost instantly, finishing before the window ever
-        // appeared. backgroundColor above already prevents any white flash,
-        // so showing immediately is safe.
         icon: path.join(__dirname, 'build', 'icon.ico'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
@@ -265,7 +254,6 @@ function createWindow() {
 
     let resizeTimer = null;
     mainWindow.on('resize', () => {
-        if (inSplash) return; // ignore the programmatic splash->app resize itself
         clearTimeout(resizeTimer);
         resizeTimer = setTimeout(async () => {
             if (mainWindow.isDestroyed()) return;
@@ -275,15 +263,6 @@ function createWindow() {
         }, 500);
     });
 }
-
-ipcMain.on('splash-finished', () => {
-    if (!mainWindow || mainWindow.isDestroyed() || !inSplash) return;
-    inSplash = false;
-    mainWindow.setResizable(true);
-    mainWindow.setMinimumSize(980, 640);
-    mainWindow.setSize(appState.windowBounds.width || 1180, appState.windowBounds.height || 780, true);
-    mainWindow.center();
-});
 
 app.whenReady().then(async () => {
     await loadState();

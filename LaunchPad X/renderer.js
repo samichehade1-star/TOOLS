@@ -151,69 +151,6 @@ function closeEditToolModal() {
 document.getElementById('edit-tool-modal-close').addEventListener('click', closeEditToolModal);
 editToolModalOverlay.addEventListener('click', (e) => { if (e.target === editToolModalOverlay) closeEditToolModal(); });
 
-// ---------------------------------------------------------------- splash
-// Plays assets/intro.mp4 if it loads; if that file is ever missing, falls
-// back to the pure CSS/SVG "spark -> streak -> mark draws in -> glow ->
-// wordmark" sequence declared in styles.css (which starts on its own the
-// moment #splash-fallback becomes visible — display:none suspends its
-// animations entirely until then, so no separate timer is needed for it).
-(function initSplash() {
-  const overlay = document.getElementById('splash-overlay');
-  const video = document.getElementById('splash-video');
-  const fallback = document.getElementById('splash-fallback');
-  const skipBtn = document.getElementById('splash-skip');
-  let dismissed = false;
-
-  function dismissSplash() {
-    if (dismissed) return;
-    dismissed = true;
-    overlay.classList.add('fading');
-    window.api.splashFinished(); // grows the window from the splash's square size to the real app size
-    setTimeout(() => overlay.classList.add('hidden'), 520);
-  }
-
-  function useFallback() {
-    video.parentElement.style.display = 'none';
-    fallback.style.display = 'flex';
-    setTimeout(dismissSplash, 3900);
-  }
-
-  // Trims to the 1s-9s window (skips the slow zoom-in lead-in and the tail)
-  // without touching the actual file. Two things had to be worked around to
-  // get here:
-  // 1) `autoplay` racing a `currentTime` seek on 'loadedmetadata' let
-  //    Chromium decode/seek through the video unpaced to the display before
-  //    the window had even appeared — so play() is only called manually,
-  //    once the seek has actually settled ('seeked').
-  // 2) On a cold process start (first-ever decode of this file — GPU/codec
-  //    pipeline warming up), 'timeupdate' can stall then fire a burst of
-  //    catch-up events with currentTime jumping in large steps rather than
-  //    smoothly, which made a currentTime-based cutoff fire almost
-  //    immediately. Gating dismissal on a plain wall-clock timer instead
-  //    sidesteps that entirely — the splash's on-screen duration no longer
-  //    depends on the video element's own (occasionally unreliable) clock.
-  const TRIM_START = 1;
-  const TRIM_DURATION_MS = 8000; // 1s -> 9s
-  let started = false;
-  video.addEventListener('loadedmetadata', () => { video.currentTime = TRIM_START; });
-  video.addEventListener('seeked', () => {
-    if (started) return;
-    started = true;
-    video.play()
-      .then(() => setTimeout(dismissSplash, TRIM_DURATION_MS))
-      .catch(useFallback);
-  });
-
-  video.addEventListener('error', useFallback);
-  video.addEventListener('ended', dismissSplash);
-  skipBtn.addEventListener('click', dismissSplash);
-  // safety net in case the video stalls without ever reaching the trim point
-  setTimeout(dismissSplash, 12000);
-
-  video.src = 'assets/intro.mp4';
-  video.load();
-})();
-
 // ---------------------------------------------------------------- theming
 function applyTheme(theme) {
   const root = document.documentElement.style;
