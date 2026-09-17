@@ -9,6 +9,7 @@ Source for Sami's desktop tools. Each app below has its own release channel — 
 | <img src="Diddler/assets/logo.png" width="48"> | **Diddler**<br>Send/cancel Dead by Daylight friend requests when the in-game system won't cooperate | [![Latest release](https://img.shields.io/github/v/release/samichehade1-star/diddler?label=download&style=for-the-badge)](https://github.com/samichehade1-star/diddler/releases/latest) |
 | <img src="LaunchPad X/assets/logo.png" width="48"> | **LaunchPad X**<br>Universal launch pad for trainers, spoofers, bypasses and unlockers | [![Latest release](https://img.shields.io/github/v/release/samichehade1-star/launchpad-x?label=download&style=for-the-badge)](https://github.com/samichehade1-star/launchpad-x/releases/latest) |
 | | **Tile Auto-Presser**<br>Reads the on-screen combo tiles in Dead by Daylight and presses them instantly | [![Latest release](https://img.shields.io/github/v/release/samichehade1-star/tile-auto-presser?label=download&style=for-the-badge)](https://github.com/samichehade1-star/tile-auto-presser/releases/latest) |
+| <img src="spotify-widget/assets/icon.ico" width="48"> | **Spotify Widget**<br>Small always-on-top Spotify control bar — play/pause, skip, volume, playlists, queue and more | [![Latest release](https://img.shields.io/github/v/release/samichehade1-star/spotify-widget?label=download&style=for-the-badge)](https://github.com/samichehade1-star/spotify-widget/releases/latest) |
 
 ## Installing
 
