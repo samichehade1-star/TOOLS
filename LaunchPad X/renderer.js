@@ -361,6 +361,25 @@ function buildGameCard(game) {
     renderLibrary();
   });
 
+  const launchBtn = node.querySelector('.game-card-launch');
+  launchBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (launchBtn.classList.contains('launching')) return;
+    launchBtn.classList.remove('status-ok', 'status-error');
+    launchBtn.classList.add('launching');
+    launchBtn.textContent = '…';
+    const res = await window.api.launchGame(game.id);
+    launchBtn.classList.remove('launching');
+    launchBtn.classList.add(res.success ? 'status-ok' : 'status-error');
+    launchBtn.textContent = res.success ? '✓' : '!';
+    if (!res.success) launchBtn.title = res.error;
+    setTimeout(() => {
+      launchBtn.classList.remove('status-ok', 'status-error');
+      launchBtn.textContent = '▶';
+      launchBtn.title = 'Quick launch';
+    }, 1800);
+  });
+
   node.addEventListener('click', () => openGameDetail(game.id));
   bindDeleteConfirm(node.querySelector('.game-card-delete'), async () => {
     const res = await window.api.deleteGame(game.id);
