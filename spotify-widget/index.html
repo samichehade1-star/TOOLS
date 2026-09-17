@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>Spotify Widget</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+
+    <!-- Setup / login view -->
+    <div id="setup-view" class="view hidden">
+      <div class="setup-inner">
+        <div class="setup-title">Connect Spotify</div>
+        <div id="step-clientid" class="setup-step">
+          <p class="setup-text">Paste your Spotify app's <b>Client ID</b>:</p>
+          <input id="client-id-input" type="text" placeholder="Client ID" />
+          <button id="save-client-id-btn">Save</button>
+        </div>
+        <div id="step-auth" class="setup-step hidden">
+          <p class="setup-text">Client ID saved. Click below to log in with Spotify.</p>
+          <button id="login-btn">Log in with Spotify</button>
+        </div>
+        <div id="setup-status" class="setup-status"></div>
+      </div>
+    </div>
+
+    <!-- Compact player view -->
+    <div id="player-view" class="view hidden">
+      <div class="bar drag" title="Right-click for options">
+        <span class="drag-handle">&#8942;&#8942;</span>
+        <div class="controls no-drag">
+          <button id="play-btn" class="ctrl-btn" title="Play/Pause">&#9654;</button>
+          <button id="next-btn" class="ctrl-btn" title="Next">&#9197;</button>
+          <button id="plus-btn" class="ctrl-btn" title="Playlists / Queue / Hot / Genre">+</button>
+          <button id="dj-btn" class="ctrl-btn dj-btn" title="Open Spotify DJ">DJ</button>
+          <span id="vol-icon" class="ctrl-btn vol-icon" title="Volume">&#128266;</span>
+          <input id="vol-slider" class="no-drag" type="range" min="0" max="100" value="50" />
+        </div>
+      </div>
+
+      <!-- Expandable playlists/queue/hot/genre popup -->
+      <div id="popup-panel" class="popup no-drag hidden">
+        <div class="popup-tabs">
+          <span id="tab-liked" class="popup-tab active">Liked</span>
+          <span id="tab-playlists" class="popup-tab">Playlists</span>
+          <span id="tab-queue" class="popup-tab">Queue</span>
+          <span id="tab-hot" class="popup-tab">Hot</span>
+          <span id="tab-genre" class="popup-tab">Genre</span>
+          <span id="popup-close" class="icon-btn tiny popup-close" title="Close">&#10005;</span>
+        </div>
+        <div id="popup-list" class="popup-list"></div>
+      </div>
+    </div>
+
+  </div>
+  <script src="renderer.js"></script>
+</body>
+</html>

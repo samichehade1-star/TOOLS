@@ -1,0 +1,36 @@
+{
+  "name": "spotify-widget",
+  "version": "1.0.0",
+  "description": "Small always-on-top Spotify control widget",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win dir"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "allowScripts": {
+    "electron@33.4.11": true
+  },
+  "build": {
+    "appId": "com.samichehade.spotifywidget",
+    "productName": "Spotify Widget",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "renderer.js",
+      "style.css",
+      "assets/**/*"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": "dir"
+    }
+  }
+}
