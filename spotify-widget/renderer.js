@@ -24,6 +24,12 @@ const tabQueue = document.getElementById('tab-queue');
 const tabHot = document.getElementById('tab-hot');
 const tabGenre = document.getElementById('tab-genre');
 
+const searchBtn = document.getElementById('search-btn');
+const searchPanel = document.getElementById('search-panel');
+const searchInput = document.getElementById('search-input');
+const searchResults = document.getElementById('search-results');
+const searchClose = document.getElementById('search-close');
+
 const GENRES = ['Pop', 'Hip-Hop', 'Rock', 'EDM', 'R&B', 'Latin', 'K-Pop', 'Indie', 'Chill', 'Country', 'Metal', 'Jazz'];
 
 const COMPACT_SIZE = { width: 250, height: 32 };
@@ -35,6 +41,8 @@ let pollTimer = null;
 let volumeDragging = false;
 let lastVolumeSendAt = 0;
 let popupOpen = false;
+let searchOpen = false;
+let searchDebounceTimer = null;
 let activeTab = 'liked';
 let playlistsCache = null;
 let likedCache = null;
@@ -154,6 +162,7 @@ plusBtn.addEventListener('click', () => {
   if (popupOpen) {
     closePopup();
   } else {
+    if (searchOpen) closeSearch();
     openPopup();
   }
 });
@@ -169,7 +178,69 @@ function openPopup() {
 function closePopup() {
   popupOpen = false;
   popupPanel.classList.add('hidden');
-  window.api.resizeWindow(COMPACT_SIZE.width, COMPACT_SIZE.height);
+  if (!searchOpen) window.api.resizeWindow(COMPACT_SIZE.width, COMPACT_SIZE.height);
+}
+
+// ---------- Search ----------
+searchBtn.addEventListener('click', () => {
+  if (searchOpen) {
+    closeSearch();
+  } else {
+    if (popupOpen) closePopup();
+    openSearch();
+  }
+});
+searchClose.addEventListener('click', closeSearch);
+
+function openSearch() {
+  searchOpen = true;
+  searchPanel.classList.remove('hidden');
+  window.api.resizeWindow(EXPANDED_SIZE.width, EXPANDED_SIZE.height);
+  setTimeout(() => searchInput.focus(), 50);
+}
+
+function closeSearch() {
+  searchOpen = false;
+  searchPanel.classList.add('hidden');
+  if (!popupOpen) window.api.resizeWindow(COMPACT_SIZE.width, COMPACT_SIZE.height);
+}
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(() => runSearch(searchInput.value), 350);
+});
+
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    clearTimeout(searchDebounceTimer);
+    runSearch(searchInput.value);
+  }
+});
+
+async function runSearch(query) {
+  if (!query || !query.trim()) {
+    searchResults.innerHTML = '<div class="popup-empty">Type to search…</div>';
+    return;
+  }
+  searchResults.innerHTML = '<div class="popup-empty">Searching…</div>';
+  const res = await window.api.searchTracks(query);
+  if (res.error) {
+    searchResults.innerHTML = `<div class="popup-empty">${res.error}</div>`;
+    return;
+  }
+  if (!res.items.length) {
+    searchResults.innerHTML = '<div class="popup-empty">No results</div>';
+    return;
+  }
+  searchResults.innerHTML = '';
+  const frag = document.createDocumentFragment();
+  res.items.forEach(item => {
+    frag.appendChild(makeTrackItem(item, async () => {
+      await window.api.playTrack(item.uri);
+      closeSearch();
+    }));
+  });
+  searchResults.appendChild(frag);
 }
 
 tabLiked.addEventListener('click', () => switchTab('liked'));
@@ -302,7 +373,7 @@ function resetIdleTimer() {
   appEl.classList.remove('idle');
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    if (!popupOpen) appEl.classList.add('idle');
+    if (!popupOpen && !searchOpen) appEl.classList.add('idle');
   }, IDLE_MS);
 }
 

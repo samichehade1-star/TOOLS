@@ -408,6 +408,27 @@ ipcMain.handle('spotify:setVolume', async (evt, percent) => {
   return res.ok || res.status === 204;
 });
 
+ipcMain.handle('spotify:searchTracks', async (evt, query) => {
+  try {
+    if (!query || !query.trim()) return { items: [] };
+    const res = await spotifyFetch(`/search?q=${encodeURIComponent(query)}&type=track&limit=10`);
+    if (!res.ok) return { error: `HTTP ${res.status}` };
+    const data = await res.json();
+    const items = (data.tracks && data.tracks.items ? data.tracks.items : []).filter(Boolean);
+    return {
+      items: items.map(t => ({
+        id: t.id,
+        name: t.name,
+        artist: t.artists.map(a => a.name).join(', '),
+        uri: t.uri,
+        image: t.album && t.album.images.length ? t.album.images[t.album.images.length - 1].url : null
+      }))
+    };
+  } catch (e) {
+    return { error: e.message };
+  }
+});
+
 ipcMain.handle('spotify:getLiked', async () => {
   try {
     const res = await spotifyFetch('/me/tracks?limit=25');

@@ -187,6 +187,23 @@ img {
 .popup-close {
   margin-left: auto;
 }
+
+#search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.12);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 11px;
+  padding: 4px 8px;
+  outline: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+#search-input::placeholder {
+  color: #888;
+}
 .popup-list {
   flex: 1 1 auto;
   overflow-y: auto;

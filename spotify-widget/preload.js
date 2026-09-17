@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   next: () => ipcRenderer.invoke('spotify:next'),
   previous: () => ipcRenderer.invoke('spotify:previous'),
   setVolume: (percent) => ipcRenderer.invoke('spotify:setVolume', percent),
+  searchTracks: (query) => ipcRenderer.invoke('spotify:searchTracks', query),
   getLiked: () => ipcRenderer.invoke('spotify:getLiked'),
   getPlaylists: () => ipcRenderer.invoke('spotify:getPlaylists'),
   getQueue: () => ipcRenderer.invoke('spotify:getQueue'),
