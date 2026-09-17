@@ -3,22 +3,33 @@
   "version": "1.0.0",
   "description": "Small always-on-top Spotify control widget",
   "main": "main.js",
+  "author": "sami",
+  "license": "ISC",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win dir"
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
   },
   "devDependencies": {
     "electron": "^33.0.0",
     "electron-builder": "^25.1.8"
   },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
   "allowScripts": {
     "electron@33.4.11": true
   },
   "build": {
-    "appId": "com.samichehade.spotifywidget",
+    "appId": "com.sami.spotifywidget",
     "productName": "Spotify Widget",
     "directories": {
       "output": "dist"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "samichehade1-star",
+      "repo": "spotify-widget"
     },
     "files": [
       "main.js",
@@ -30,7 +41,13 @@
     ],
     "win": {
       "icon": "assets/icon.ico",
-      "target": "dir"
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "deleteAppDataOnUninstall": false,
+      "differentialPackage": false
     }
   }
 }

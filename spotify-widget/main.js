@@ -1,4 +1,5 @@
-const { app, BrowserWindow, ipcMain, shell, screen, Menu, globalShortcut } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, screen, Menu, globalShortcut, dialog } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -117,11 +118,45 @@ app.whenReady().then(() => {
   enableAutoStart();
   ensureSpotifyRunning();
   registerFocusHotkey();
+  if (app.isPackaged) checkForUpdates(false);
 });
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
 });
+
+// ---------- Auto-update (electron-updater, GitHub releases) ----------
+let updateCheckInProgress = false;
+
+autoUpdater.on('update-not-available', () => {
+  if (updateCheckInProgress) {
+    dialog.showMessageBox(mainWindow, { message: "You're on the latest version.", title: 'Spotify Widget' });
+  }
+  updateCheckInProgress = false;
+});
+
+autoUpdater.on('error', (err) => {
+  if (updateCheckInProgress) {
+    dialog.showMessageBox(mainWindow, { message: `Update check failed: ${err.message || err}`, title: 'Spotify Widget' });
+  }
+  updateCheckInProgress = false;
+});
+
+autoUpdater.on('update-downloaded', async () => {
+  const { response } = await dialog.showMessageBox(mainWindow, {
+    type: 'question',
+    buttons: ['Restart & Install', 'Later'],
+    defaultId: 0,
+    title: 'Update ready',
+    message: 'A new version of Spotify Widget has been downloaded. Restart now to install it?'
+  });
+  if (response === 0) autoUpdater.quitAndInstall();
+});
+
+function checkForUpdates(manual) {
+  updateCheckInProgress = !!manual;
+  autoUpdater.checkForUpdates().catch(() => {});
+}
 
 app.on('window-all-closed', () => {
   app.quit();
@@ -275,6 +310,8 @@ ipcMain.on('show-context-menu', (event) => {
         event.sender.send('force-setup');
       }
     },
+    { type: 'separator' },
+    { label: 'Check for Updates', click: () => checkForUpdates(true) },
     { type: 'separator' },
     { label: 'Quit', click: () => app.quit() }
   ];
