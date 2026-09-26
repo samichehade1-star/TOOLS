@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Halloween Mod Manager</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="drag-overlay">drop mods to install</div>
+    <div id="custom-title-bar">
+        <div></div>
+        <div id="custom-title-bar-buttons">
+            <button class="title-bar-button" id="minimize-button"><i class="fas fa-minus"></i></button>
+            <button class="title-bar-button" id="maximize-button"><i class="far fa-square"></i></button>
+            <button class="title-bar-button close" id="close-button"><i class="fas fa-times"></i></button>
+        </div>
+    </div>
+    <div id="app">
+        <div id="sidebar">
+            <div id="sidebar-logo">
+                <img src="assets/logo.png" alt="Halloween Mod Manager" draggable="false">
+                <div id="sidebar-title">mod manager</div>
+            </div>
+            <div id="sidebar-credit">by SAMI</div>
+            <div class="tab-list">
+                <button class="tab-button active" data-tab="mods"><i class="fas fa-gamepad"></i> <span>mods</span></button>
+                <button class="tab-button" data-tab="downloads"><i class="fas fa-download"></i> <span>downloads</span> <span id="downloads-count" class="count-badge hidden"></span></button>
+                <button class="tab-button" data-tab="settings"><i class="fas fa-cog"></i> <span>settings</span></button>
+            </div>
+            <div class="tab-list" style="margin-top:auto;">
+                <button id="update-banner" class="tab-button update-banner hidden" title="a new version is available"><i class="fas fa-circle-arrow-up"></i> <span id="update-banner-text">update</span></button>
+                <button id="launch-trainer" class="tab-button outlined" title="launch the trainer set in settings"><i class="fas fa-bolt"></i> <span>trainer</span></button>
+                <button id="open-mods" class="tab-button outlined" title="open the ~mods folder"><i class="fas fa-folder-open"></i> <span>open MODS</span></button>
+                <select id="launch-platform" class="field">
+                    <option value="steam">steam</option>
+                    <option value="epic">epic games</option>
+                </select>
+                <button id="launch-game" class="tab-button outlined" title="launch Halloween"><i class="fas fa-play"></i> <span>launch game</span></button>
+            </div>
+        </div>
+
+        <div id="content">
+            <div id="bottom-fade"></div>
+
+            <!-- mods tab -->
+            <div id="mods-tab" class="tab-content active">
+                <div class="header-row">
+                    <h2 id="mods-title">mods</h2>
+                    <div class="drop-message">
+                        <i class="fas fa-file-import"></i>
+                        <span>drag & drop .pak / .ucas / .utoc / .zip / .rar / .7z to install</span>
+                    </div>
+                </div>
+                <div id="game-missing" class="banner hidden">
+                    <i class="fas fa-triangle-exclamation"></i> game folder not found — set it in settings.
+                </div>
+                <div id="mod-library-toolbar">
+                    <input id="mod-library-search" type="text" placeholder="search mods...">
+                    <select id="mod-library-sort">
+                        <option value="custom">custom order</option>
+                        <option value="alphabetical">alphabetical</option>
+                        <option value="recent">recently added</option>
+                    </select>
+                </div>
+                <div style="display:flex;gap:1rem;align-items:center;margin-bottom:1.5rem;">
+                    <button id="add-btn" class="big-button">
+                        <i class="fas fa-plus-circle"></i> install mods
+                    </button>
+                    <button id="new-category-btn" class="outline-button subtle"><i class="fas fa-layer-group"></i> new category</button>
+                </div>
+                <div id="mod-list"></div>
+                <p class="empty-message hidden" id="empty">no mods installed yet.</p>
+            </div>
+
+            <!-- downloads tab -->
+            <div id="downloads-tab" class="tab-content">
+                <div class="header-row">
+                    <h2 class="page-title" style="margin:0;">downloads</h2>
+                    <div class="drop-message"><span>mod folders, zips, rars, 7z and pakchunk files found in your downloads</span></div>
+                </div>
+                <div id="downloads-path-row">
+                    <i class="fas fa-folder-open"></i>
+                    <span id="downloads-path-text"></span>
+                    <button id="open-downloads" class="outline-button subtle">open</button>
+                    <button id="change-downloads" class="outline-button subtle">change folder</button>
+                    <button id="rescan-downloads" class="outline-button"><i class="fas fa-rotate-right"></i> rescan</button>
+                </div>
+                <div id="downloads-list"></div>
+                <p class="empty-message hidden" id="no-downloads">no mods found in this folder. Only folders, archives and loose files that contain .pak / .ucas / .utoc files show up.</p>
+            </div>
+
+            <!-- settings tab -->
+            <div id="settings-tab" class="tab-content">
+                <h2 class="page-title glow-target">settings</h2>
+                <div class="settings-stack">
+
+                    <details class="settings-section" open>
+                        <summary class="settings-section-header">
+                            <i class="fas fa-image settings-section-icon"></i>
+                            <div class="settings-section-header-text">
+                                <div class="settings-section-title">custom intro</div>
+                                <div class="settings-section-subtitle">replace the splash screen with your own image</div>
+                            </div>
+                            <i class="fas fa-chevron-right settings-section-chevron"></i>
+                        </summary>
+                        <div class="settings-section-body">
+                            <p class="settings-hint" style="margin:0.75rem 0 0;">
+                                Pick a PNG or JPEG. It's converted to <code id="splash-name">Splash.bmp</code> and replaces the one in
+                                <code>Ravage\Content\Splash</code>. This only works while the intro mod is on. Turning the intro mod off
+                                puts the original back.
+                            </p>
+
+                            <div>
+                                <label class="settings-subrow-label" for="intro-mod">intro mod</label>
+                                <select id="intro-mod" class="field"></select>
+                            </div>
+
+                            <div id="intro-off" class="banner hidden"></div>
+
+                            <div class="splash-editor">
+                                <div class="preview-wrap">
+                                    <canvas id="preview" width="480" height="270"></canvas>
+                                    <div class="preview-label" id="preview-label">current in game</div>
+                                </div>
+                                <div class="controls">
+                                    <button id="pick-splash" class="outline-button"><i class="fas fa-file-image"></i> choose image</button>
+                                    <div>
+                                        <label class="settings-subrow-label" for="scale">size <b id="scale-val">100%</b></label>
+                                        <input type="range" id="scale" min="25" max="300" step="1" value="100">
+                                        <div class="presets">
+                                            <button data-scale="50">50%</button>
+                                            <button data-scale="75">75%</button>
+                                            <button data-scale="100">fit</button>
+                                            <button data-scale="fill">fill</button>
+                                            <button data-scale="150">150%</button>
+                                        </div>
+                                    </div>
+                                    <button id="apply-splash" class="primary-button"><i class="fas fa-check"></i> apply to game</button>
+                                    <button id="undo-splash" class="outline-button subtle"><i class="fas fa-clock-rotate-left"></i> undo last change</button>
+                                    <button id="reset-splash" class="outline-button subtle"><i class="fas fa-rotate-left"></i> restore original intro</button>
+                                </div>
+                            </div>
+
+                            <div id="splash-history-wrap" class="hidden">
+                                <label class="settings-subrow-label">previous intros <span style="text-transform:none;font-weight:400;">(last 5 are kept, click one to put it back)</span></label>
+                                <div id="splash-history" class="splash-history"></div>
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="settings-section">
+                        <summary class="settings-section-header">
+                            <i class="fas fa-palette settings-section-icon"></i>
+                            <div class="settings-section-header-text">
+                                <div class="settings-section-title glow-target">appearance</div>
+                                <div class="settings-section-subtitle">colors</div>
+                            </div>
+                            <i class="fas fa-chevron-right settings-section-chevron"></i>
+                        </summary>
+                        <div class="settings-section-body">
+                            <div class="theme-presets" style="margin-top:0.75rem;">
+                                <span class="settings-subrow-label" style="margin:0 0.5rem 0 0;">presets</span>
+                                <button class="theme-preset" data-preset="pumpkin"><i style="background:#ff7a1a"></i>pumpkin</button>
+                                <button class="theme-preset" data-preset="blood"><i style="background:#d0142c"></i>blood</button>
+                                <button class="theme-preset" data-preset="toxic"><i style="background:#7ddc1f"></i>toxic</button>
+                                <button class="theme-preset" data-preset="ghost"><i style="background:#c9d6e3"></i>ghost</button>
+                                <button class="theme-preset" data-preset="fmp"><i style="background:#bb86fc"></i>fmp purple</button>
+                                <button id="reset-theme-button" class="outline-button" style="margin-left:auto;"><i class="fas fa-undo"></i> reset to default</button>
+                            </div>
+                            <div id="theme-color-grid" class="color-swatch-row">
+                                    <div class="color-swatch-item">
+                                        <label for="theme-color-accent">accent</label>
+                                        <input type="color" id="theme-color-accent" data-theme-key="accent">
+                                    </div>
+                                    <div class="color-swatch-item">
+                                        <label for="theme-color-hover">hover</label>
+                                        <input type="color" id="theme-color-hover" data-theme-key="hover">
+                                    </div>
+                                    <div class="color-swatch-item">
+                                        <label for="theme-color-background">background</label>
+                                        <input type="color" id="theme-color-background" data-theme-key="background">
+                                    </div>
+                                    <div class="color-swatch-item">
+                                        <label for="theme-color-sidebar">sidebar</label>
+                                        <input type="color" id="theme-color-sidebar" data-theme-key="sidebar">
+                                    </div>
+                                    <div class="color-swatch-item">
+                                        <label for="theme-color-text">text</label>
+                                        <input type="color" id="theme-color-text" data-theme-key="text">
+                                    </div>
+                                    <div class="color-swatch-item">
+                                        <label for="theme-color-modCardOn">mod cards (on)</label>
+                                        <input type="color" id="theme-color-modCardOn" data-theme-key="modCardOn">
+                                    </div>
+                                    <div class="color-swatch-item">
+                                        <label for="theme-color-modCardOff">mod cards (off)</label>
+                                        <input type="color" id="theme-color-modCardOff" data-theme-key="modCardOff">
+                                    </div>
+                                    <div class="color-swatch-item">
+                                        <label for="theme-color-border">borders</label>
+                                        <input type="color" id="theme-color-border" data-theme-key="border">
+                                    </div>
+                                    <div class="color-swatch-item">
+                                        <label for="theme-color-titleBar">title bar</label>
+                                        <input type="color" id="theme-color-titleBar" data-theme-key="titleBar">
+                                    </div>
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="settings-section">
+                        <summary class="settings-section-header">
+                            <i class="fas fa-table-columns settings-section-icon"></i>
+                            <div class="settings-section-header-text">
+                                <div class="settings-section-title glow-target">layout</div>
+                                <div class="settings-section-subtitle">font size, glow</div>
+                            </div>
+                            <i class="fas fa-chevron-right settings-section-chevron"></i>
+                        </summary>
+                        <div class="settings-section-body">
+                            <div class="layout-option-row" style="margin-top:0.75rem;">
+                                <span>font size</span>
+                                <div class="range-wrap">
+                                    <input type="range" id="font-size-slider" min="12" max="22" step="1" value="15">
+                                    <span id="font-size-value">15px</span>
+                                </div>
+                            </div>
+                            <div class="layout-option-row">
+                                <span>text glow</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="text-glow-toggle">
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                            <div class="layout-option-row" id="glow-intensity-row">
+                                <span>glow intensity</span>
+                                <div class="range-wrap">
+                                    <input type="range" id="glow-intensity-slider" min="0" max="100" value="45">
+                                    <span id="glow-intensity-value">45%</span>
+                                </div>
+                            </div>
+                            <div class="layout-option-row" id="glow-color-row">
+                                <span>glow color</span>
+                                <input type="color" id="glow-color-picker" value="#ff7a1a">
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="settings-section" open>
+                        <summary class="settings-section-header">
+                            <i class="fas fa-map-location-dot settings-section-icon"></i>
+                            <div class="settings-section-header-text">
+                                <div class="settings-section-title">game location</div>
+                                <div class="settings-section-subtitle">where mods get installed</div>
+                            </div>
+                            <i class="fas fa-chevron-right settings-section-chevron"></i>
+                        </summary>
+                        <div class="settings-section-body">
+                            <div>
+                                <label class="settings-subrow-label" for="game-root" style="margin-top:0.75rem;">halloween game folder</label>
+                                <div class="settings-row-flex">
+                                    <input type="text" id="game-root" class="field" readonly>
+                                    <button id="pick-root" class="outline-button"><i class="fas fa-folder-open"></i> browse</button>
+                                </div>
+                                <p class="settings-hint">mods go to <code id="mods-dir"></code></p>
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="settings-section" open>
+                        <summary class="settings-section-header">
+                            <i class="fas fa-bolt settings-section-icon"></i>
+                            <div class="settings-section-header-text">
+                                <div class="settings-section-title glow-target">trainer</div>
+                                <div class="settings-section-subtitle">what the trainer button in the sidebar opens</div>
+                            </div>
+                            <i class="fas fa-chevron-right settings-section-chevron"></i>
+                        </summary>
+                        <div class="settings-section-body">
+                            <div>
+                                <label class="settings-subrow-label" for="trainer-path" style="margin-top:0.75rem;">trainer path</label>
+                                <div class="settings-row-flex">
+                                    <input type="text" id="trainer-path" class="field" readonly placeholder="not set: click browse and pick the trainer .exe">
+                                    <button id="pick-trainer" class="outline-button"><i class="fas fa-file-import"></i> browse</button>
+                                    <button id="clear-trainer" class="outline-button subtle"><i class="fas fa-times"></i> clear</button>
+                                </div>
+                            </div>
+                        </div>
+                    </details>
+
+                    <details class="settings-section">
+                        <summary class="settings-section-header">
+                            <i class="fas fa-box-archive settings-section-icon"></i>
+                            <div class="settings-section-header-text">
+                                <div class="settings-section-title">mod storage</div>
+                                <div class="settings-section-subtitle">where mods live while they're turned off</div>
+                            </div>
+                            <i class="fas fa-chevron-right settings-section-chevron"></i>
+                        </summary>
+                        <div class="settings-section-body">
+                            <p class="settings-hint" style="margin:0.75rem 0 0;">Turned-off mods are removed from the game folder completely. The only copy is kept here.</p>
+                            <div><button id="open-storage" class="outline-button"><i class="fas fa-folder-open"></i> open storage folder</button></div>
+                        </div>
+                    </details>
+
+                    <details class="settings-section" open>
+                        <summary class="settings-section-header">
+                            <i class="fas fa-rotate settings-section-icon"></i>
+                            <div class="settings-section-header-text">
+                                <div class="settings-section-title glow-target">updates</div>
+                                <div class="settings-section-subtitle">checks GitHub automatically on start and every few hours</div>
+                            </div>
+                            <i class="fas fa-chevron-right settings-section-chevron"></i>
+                        </summary>
+                        <div class="settings-section-body">
+                            <div class="update-row" style="margin-top:0.75rem;">
+                                <span>version <b id="app-version"></b></span>
+                                <button id="check-updates" class="outline-button"><i class="fas fa-rotate"></i> check for updates</button>
+                                <button id="update-action" class="primary-button hidden"></button>
+                            </div>
+                            <p id="update-status-text" class="settings-hint" style="margin:0;"></p>
+                        </div>
+                    </details>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- mod builder: create a mod from loose files, or manage an existing mod's files -->
+    <div id="builder" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="builder-title">new mod</h2>
+                <button class="modal-close-button" id="builder-close"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="modal-body">
+                <label class="settings-subrow-label" for="builder-name">mod name</label>
+                <input id="builder-name" class="field" type="text" placeholder="e.g. Extra NPC" style="width:100%;">
+
+                <div class="builder-files-head">
+                    <label class="settings-subrow-label" style="margin:0;">files <span id="builder-count"></span></label>
+                    <button id="builder-add-files" class="outline-button"><i class="fas fa-plus"></i> add files</button>
+                </div>
+                <div id="builder-files" class="builder-drop"></div>
+                <p class="settings-hint">Add every pakchunk that belongs to this mod (.pak, .ucas, .utoc and .sig if it has one). You can also drop files straight onto this box.</p>
+
+                <label class="builder-check" id="builder-enable-row">
+                    <input type="checkbox" id="builder-enable" checked> turn on after saving
+                </label>
+            </div>
+            <div class="modal-footer">
+                <button id="builder-cancel" class="outline-button subtle">cancel</button>
+                <button id="builder-save" class="primary-button"><i class="fas fa-check"></i> save mod</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="hidden"></div>
+    <script src="renderer.js"></script>
+</body>
+</html>

@@ -10,6 +10,7 @@ Source for Sami's desktop tools. Each app below has its own release channel — 
 | <img src="LaunchPad X/assets/logo.png" width="48"> | **LaunchPad X**<br>Universal launch pad for trainers, spoofers, bypasses and unlockers | [![Latest release](https://img.shields.io/github/v/release/samichehade1-star/launchpad-x?label=download&style=for-the-badge)](https://github.com/samichehade1-star/launchpad-x/releases/latest) |
 | | **Tile Auto-Presser**<br>Reads the on-screen combo tiles in Dead by Daylight and presses them instantly | [![Latest release](https://img.shields.io/github/v/release/samichehade1-star/tile-auto-presser?label=download&style=for-the-badge)](https://github.com/samichehade1-star/tile-auto-presser/releases/latest) |
 | <img src="spotify-widget/assets/icon.ico" width="48"> | **Spotify Widget**<br>Small always-on-top Spotify control bar — play/pause, skip, volume, playlists, queue and more | [![Latest release](https://img.shields.io/github/v/release/samichehade1-star/spotify-widget?label=download&style=for-the-badge)](https://github.com/samichehade1-star/spotify-widget/releases/latest) |
+| <img src="Halloween Mod Manager/build/icon.png" width="48"> | **Halloween Mod Manager**<br>Mod manager for Halloween (Ravage) — on/off mods, categories, downloads tab, custom intro with backups | [![Latest release](https://img.shields.io/github/v/release/samichehade1-star/halloween-mod-manager?label=download&style=for-the-badge)](https://github.com/samichehade1-star/halloween-mod-manager/releases/latest) |
 
 ## Installing
 
