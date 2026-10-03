@@ -57,6 +57,12 @@
   .card .icon { font-size: 18px; width: 22px; text-align: center; flex-shrink: 0; }
   .card .info { flex: 1; min-width: 0; }
   .card .name { font-size: 11px; font-weight: 700; color: var(--text); }
+  .card .name .count {
+    display: inline-block; min-width: 14px; padding: 1px 5px; margin-left: 4px;
+    background: #1E1E22; border: 1px solid var(--card-border); border-radius: 8px;
+    font-size: 9px; font-weight: 700; color: var(--accent); text-align: center;
+    vertical-align: middle;
+  }
   .card .desc { font-size: 8.5px; color: var(--dim); line-height: 1.25; margin-top: 1px; }
   .card .ctrl { text-align: center; flex-shrink: 0; width: 44px; }
   .card .ctrl-label { font-size: 6.5px; color: var(--dim); letter-spacing: 0.5px; margin-bottom: 3px; }
@@ -131,7 +137,7 @@
   <div class="card">
     <div class="icon">🎯</div>
     <div class="info">
-      <div class="name">KILLER</div>
+      <div class="name">KILLER <span class="count" id="killerCount">0</span></div>
       <div class="desc">Presses ability key on icon match</div>
     </div>
     <div class="ctrl">
@@ -195,6 +201,7 @@ async function poll() {
     setToggle('tgQueue', s.queueOn);
     setToggle('tgKiller', s.killerOn);
     setToggle('tgMonkey', s.monkeyOn);
+    document.getElementById('killerCount').textContent = s.killerCount;
     const startBtn = document.getElementById('startBtn');
     startBtn.textContent = s.running ? 'STOP' : 'START';
     startBtn.classList.toggle('running', s.running);

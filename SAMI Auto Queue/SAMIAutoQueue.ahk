@@ -25,11 +25,12 @@ TARGET_PROCESS := "Halloween.exe"
 
 ; bump this on every release pushed to UPDATE_REPO - CheckForUpdateOnce() compares it against the
 ; latest GitHub release tag there to decide whether to show the update prompt.
-APP_VERSION := "1.0.0"
+APP_VERSION := "1.1.0"
 UPDATE_REPO := "samichehade1-star/sami-auto-queue"
 UPDATE_ASSET_NAME := "SAMIAutoQueue.zip"
 
 SETTINGS_INI := A_ScriptDir "\autoqueue_settings.ini"
+MATCHED_NAMES_FILE := A_ScriptDir "\matched_names.txt"
 
 DARK_BG   := "0A0A0C"
 DARK_EDIT := "151518"
@@ -82,6 +83,18 @@ global monkeyDecided := false
 global lobbyIdleTimeoutSec := IniRead(SETTINGS_INI, "settings", "lobbyidletimeout", "60") + 0
 global lobbyFirstSeenAt := 0
 
+global killerPressCount := 0  ; resets to 0 each launch - not persisted, just this session's count
+
+; cumulative, deduplicated list of full names that ever matched a filter, across all sessions -
+; loaded from MATCHED_NAMES_FILE at startup so a restart doesn't lose history or re-add duplicates.
+global matchedNamesSeen := Map()
+if FileExist(MATCHED_NAMES_FILE) {
+    for line in StrSplit(FileRead(MATCHED_NAMES_FILE, "UTF-8"), "`n", "`r") {
+        line := Trim(line)
+        if (line != "")
+            matchedNamesSeen[line] := true
+    }
+}
 global handsSeen := false, matchSeen := false, lobbySeen := false, errorDialogSeen := false
 global lastErrorDialogErrLog := 0, lastErrorDialogLog := 0
 ; ScanLoop (500ms) and MonkeyLoop (600ms) are independent timers, but OCR.ahk's WaitForAsync waits
@@ -187,13 +200,14 @@ ToggleAllFeatures(*) {
 }
 
 GetStatusJson() {
-    global queueOn, killerOn, monkeyOn, masterRunning, activityLog, updateAvailable, updateVersionStr
+    global queueOn, killerOn, monkeyOn, masterRunning, activityLog, updateAvailable, updateVersionStr, killerPressCount
     return '{"queueOn":' (queueOn ? "true" : "false")
         . ',"killerOn":' (killerOn ? "true" : "false")
         . ',"monkeyOn":' (monkeyOn ? "true" : "false")
         . ',"running":' (masterRunning ? "true" : "false")
         . ',"updateAvailable":' (updateAvailable ? "true" : "false")
         . ',"updateVersion":"' updateVersionStr '"'
+        . ',"killerCount":' killerPressCount
         . ',"log":"' JsonEscape(activityLog) '"}'
 }
 
@@ -607,8 +621,10 @@ OpenMonkeySettings(*) {
     g.AddText("xm y+2 w400", "Words to look for in any of the 5 lobby names - separate multiple with a space. If any name contains any filter word once all 5 are known, it stays; if none match, it leaves and re-queues. Leave blank to never auto-leave.")
     g.SetFont("s10 norm c" DARK_TEXT, "Segoe UI")
     filterEdit := g.AddEdit("xm y+6 w400 Background" DARK_EDIT " c" DARK_TEXT, monkeyFilters)
-    saveFilterBtn := g.AddButton("xm y+6 w150", "Save filters")
+    saveFilterBtn := g.AddButton("xm y+6 w192", "Save filters")
     saveFilterBtn.OnEvent("Click", (*) => SaveMonkeyFilters())
+    exportNamesBtn := g.AddButton("x+8 yp w200", "Export matched names")
+    exportNamesBtn.OnEvent("Click", (*) => ExportMatchedNames())
 
     g.SetFont("s9 bold c" ACCENT, "Segoe UI")
     g.AddText("xm y+16 w400", "LOBBY IDLE TIMEOUT (seconds)")
@@ -638,6 +654,25 @@ SaveMonkeyFilters() {
     monkeyFilters := Trim(filterEdit.Value)
     IniWrite(monkeyFilters, SETTINGS_INI, "settings", "monkeyfilters")
     LogMsg("Monkey Finder filters set to: " (monkeyFilters = "" ? "(none - won't auto-leave)" : monkeyFilters))
+}
+
+ExportMatchedNames() {
+    global matchedNamesSeen, MATCHED_NAMES_FILE
+    if (matchedNamesSeen.Count = 0) {
+        MsgBox("No matched names recorded yet - this fills in as filter matches happen.", "SAMI - Auto Queue", "Icon!")
+        return
+    }
+    savePath := FileSelect("S16", "matched_names.txt", "Export matched names", "Text files (*.txt)")
+    if (savePath = "")
+        return
+    if !InStr(savePath, ".")
+        savePath .= ".txt"
+    try {
+        FileCopy(MATCHED_NAMES_FILE, savePath, true)
+        LogMsg("Exported " matchedNamesSeen.Count " matched name(s) to " savePath ".")
+    } catch as e {
+        MsgBox("Export failed: " e.Message, "SAMI - Auto Queue", "Icon!")
+    }
 }
 
 SaveIdleTimeout() {
@@ -977,14 +1012,15 @@ DetectErrorDialog(gx, gy, gw, gh) {
 ; each check - a known-working reference script for this exact game does the same, and recomputing
 ; from WinGetClientPos turned out to be unreliable for an unfocused window.
 DetectHands() {
-    global handsSeen, readyKey, abilityX, abilityY, abilityColor, abilityTolerance
+    global handsSeen, readyKey, abilityX, abilityY, abilityColor, abilityTolerance, killerPressCount
     if (abilityColor = "" || (abilityX = 0 && abilityY = 0))
         return
     found := false
     try found := ColorClose(PixelGetColor(abilityX, abilityY, "RGB Alt"), abilityColor, abilityTolerance)
     if (found && !handsSeen) {
         SendKeySpec(readyKey)
-        LogMsg("Ability pixel matched -> sent " PrettyKey(readyKey) ".")
+        killerPressCount++
+        LogMsg("Ability pixel matched -> sent " PrettyKey(readyKey) ". (count: " killerPressCount ")")
     }
     handsSeen := found
 }
@@ -1271,8 +1307,10 @@ CaptureNames() {
                 allKnown := false
         if allKnown {
             monkeyDecided := true
-            if MonkeyFilterMatches() {
+            matchedNames := []
+            if MonkeyFilterMatches(&matchedNames) {
                 LogMsg("Monkey Finder: filter matched among the 5 names - staying in this match.")
+                RecordMatchedNames(matchedNames)
             } else {
                 LogMsg("Monkey Finder: no filter match among all 5 names - leaving and re-queuing.")
                 LeaveLobbyAndRequeue(gx, gy, gw, gh)
@@ -1366,17 +1404,42 @@ FuzzyContains(haystack, needle, maxDist) {
     return false
 }
 
-MonkeyFilterMatches() {
+; matchedOut (if given) is filled with every one of the 5 captured names that matched any filter
+; word, deduplicated - used so callers can record exactly who triggered a "stay" decision.
+MonkeyFilterMatches(&matchedOut := "") {
     global monkeyFilters, lastCapturedNames
+    matchedOut := []
     trimmed := Trim(monkeyFilters)
     if (trimmed = "")
         return true   ; no filters configured - default to staying, don't leave blindly
+    found := false
     for f in StrSplit(trimmed, " ") {
         if (f = "")
             continue
-        for nm in lastCapturedNames
-            if InStr(nm, f, false)  ; explicit case-insensitive - matches regardless of the name's or filter's casing
-                return true
+        for nm in lastCapturedNames {
+            if (nm = "" || !InStr(nm, f, false))  ; explicit case-insensitive - matches regardless of the name's or filter's casing
+                continue
+            found := true
+            alreadyIn := false
+            for existing in matchedOut
+                if (existing = nm)
+                    alreadyIn := true
+            if !alreadyIn
+                matchedOut.Push(nm)
+        }
     }
-    return false
+    return found
+}
+
+; appends any genuinely new matched names to the cumulative on-disk list (MATCHED_NAMES_FILE),
+; skipping ones already recorded in a previous match/session - this is what "Export matched names"
+; in the Monkey Finder settings reads from.
+RecordMatchedNames(names) {
+    global matchedNamesSeen, MATCHED_NAMES_FILE
+    for nm in names {
+        if !matchedNamesSeen.Has(nm) {
+            matchedNamesSeen[nm] := true
+            try FileAppend(nm "`r`n", MATCHED_NAMES_FILE, "UTF-8")
+        }
+    }
 }
