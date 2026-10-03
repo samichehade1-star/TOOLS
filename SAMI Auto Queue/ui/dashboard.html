@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #0A0A0C;
+    --card: #17171A;
+    --card-border: #2C2C30;
+    --accent: #4FD8E8;
+    --text: #E8F4F8;
+    --dim: #8A8A90;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: "Segoe UI", sans-serif;
+    overflow: hidden;
+    user-select: none;
+  }
+  body { padding: 14px 16px 16px; position: relative; }
+
+  .version { position: absolute; top: 8px; left: 10px; font-size: 11px; color: var(--dim); }
+
+  .winctrls { position: absolute; top: 8px; right: 10px; display: flex; gap: 4px; }
+  .winctrls div {
+    width: 20px; height: 20px; border-radius: 5px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px; color: var(--dim); cursor: pointer;
+  }
+  .winctrls div:hover { background: #28282C; color: var(--text); }
+  .winctrls .closeBtn:hover { background: #E05C5C; color: #fff; }
+  .winctrls #updateBtn { display: none; color: var(--accent); }
+
+  .header { text-align: center; margin-bottom: 10px; cursor: move; }
+  .subtitle.updateReady { color: var(--accent); cursor: pointer; }
+  .title { font-size: 17px; font-weight: 700; color: var(--accent); letter-spacing: 1px; }
+  .subtitle { font-size: 9px; color: var(--dim); letter-spacing: 1.5px; margin-top: 2px; }
+
+  .section-label {
+    font-size: 11px; font-weight: 700; color: var(--accent);
+    text-align: center; margin: 10px 0 8px;
+  }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    padding: 8px 10px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card .icon { font-size: 18px; width: 22px; text-align: center; flex-shrink: 0; }
+  .card .info { flex: 1; min-width: 0; }
+  .card .name { font-size: 11px; font-weight: 700; color: var(--text); }
+  .card .desc { font-size: 8.5px; color: var(--dim); line-height: 1.25; margin-top: 1px; }
+  .card .ctrl { text-align: center; flex-shrink: 0; width: 44px; }
+  .card .ctrl-label { font-size: 6.5px; color: var(--dim); letter-spacing: 0.5px; margin-bottom: 3px; }
+
+  .toggle { width: 36px; height: 18px; border-radius: 9px; background: #28282C; cursor: pointer; position: relative; transition: background .15s; border: 1px solid #3A3A40; }
+  .toggle.on { background: var(--accent); border-color: var(--accent); }
+  .toggle .thumb { position: absolute; top: 1px; left: 1px; width: 14px; height: 14px; border-radius: 50%; background: #8A8A90; transition: left .15s, background .15s; }
+  .toggle.on .thumb { left: 19px; background: #fff; }
+
+  .gear { width: 22px; height: 22px; border-radius: 6px; background: #1E1E22; border: 1px solid var(--card-border); color: var(--text); font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .gear:hover { background: #28282C; }
+
+  .log-row { display: flex; gap: 6px; margin-top: 8px; }
+  .btn {
+    flex: 1; background: #141417; border: 1px solid var(--card-border); color: var(--text);
+    font-size: 10px; border-radius: 8px; padding: 7px 0; text-align: center; cursor: pointer;
+  }
+  .btn:hover { background: #1C1C20; }
+
+  #startBtn {
+    margin-top: 10px;
+    width: 100%;
+    padding: 11px 0;
+    border-radius: 10px;
+    background: #141417;
+    border: 1.5px solid var(--accent);
+    color: var(--accent);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-align: center;
+    cursor: pointer;
+    box-shadow: 0 0 10px rgba(79,216,232,0.25);
+  }
+  #startBtn:hover { background: #1C1C20; }
+  #startBtn.running { color: #fff; background: #184A4A; box-shadow: 0 0 14px rgba(79,216,232,0.45); }
+</style>
+</head>
+<body>
+
+  <div class="version" id="versionTxt"></div>
+
+  <div class="winctrls">
+    <div id="updateBtn" onclick="ahk.StartUpdate()" title="Update available">&#x27F3;</div>
+    <div onclick="ahk.MinimizeWindow()">&#8211;</div>
+    <div class="closeBtn" onclick="ahk.CloseWindow()">&times;</div>
+  </div>
+
+  <div class="header">
+    <div class="title">VISENYA</div>
+    <div class="subtitle" id="subtitleTxt">AUTO QUEUE SYSTEM</div>
+  </div>
+
+  <div class="section-label">CORE FEATURES</div>
+
+  <div class="card">
+    <div class="icon">🔄</div>
+    <div class="info">
+      <div class="name">AUTO QUEUE</div>
+      <div class="desc">Match summary bar + lobby confirm</div>
+    </div>
+    <div class="ctrl">
+      <div class="ctrl-label">ACTIVATE</div>
+      <div class="toggle" id="tgQueue" onclick="toggleFeature('queue')"><div class="thumb"></div></div>
+    </div>
+    <div class="ctrl">
+      <div class="ctrl-label">SETTINGS</div>
+      <div class="gear" onclick="ahk.OpenQueueSettings()">⚙</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="icon">🎯</div>
+    <div class="info">
+      <div class="name">KILLER</div>
+      <div class="desc">Presses ability key on icon match</div>
+    </div>
+    <div class="ctrl">
+      <div class="ctrl-label">ACTIVATE</div>
+      <div class="toggle" id="tgKiller" onclick="toggleFeature('killer')"><div class="thumb"></div></div>
+    </div>
+    <div class="ctrl">
+      <div class="ctrl-label">SETTINGS</div>
+      <div class="gear" onclick="ahk.OpenKillerSettings()">⚙</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="icon">🔍</div>
+    <div class="info">
+      <div class="name">MONKEY FINDER</div>
+      <div class="desc">Leaves lobby if filters don't match</div>
+    </div>
+    <div class="ctrl">
+      <div class="ctrl-label">ACTIVATE</div>
+      <div class="toggle" id="tgMonkey" onclick="toggleFeature('monkey')"><div class="thumb"></div></div>
+    </div>
+    <div class="ctrl">
+      <div class="ctrl-label">SETTINGS</div>
+      <div class="gear" onclick="ahk.OpenMonkeySettings()">⚙</div>
+    </div>
+  </div>
+
+  <div class="section-label" style="margin-bottom:0">ACTIVITY LOG</div>
+  <div class="log-row">
+    <div class="btn" onclick="ahk.OpenLogWindow()">VIEW LOG</div>
+    <div class="btn" onclick="ahk.TestNow()">TEST NOW</div>
+  </div>
+
+  <div id="startBtn" onclick="ahk.ToggleAll()">START</div>
+
+<script>
+let ahk;
+const DEFAULT_SUBTITLE = 'AUTO QUEUE SYSTEM';
+
+async function init() {
+  ahk = await window.chrome.webview.hostObjects.ahk;
+  try {
+    const v = await ahk.GetVersion();
+    document.getElementById('versionTxt').textContent = 'v' + v;
+  } catch (e) {}
+  poll();
+  setInterval(poll, 600);
+  initDrag();
+}
+
+function initDrag() {
+  const header = document.querySelector('.header');
+  header.addEventListener('pointerdown', () => ahk.StartDrag());
+}
+
+async function poll() {
+  try {
+    const raw = await ahk.GetStatus();
+    const s = JSON.parse(raw);
+    setToggle('tgQueue', s.queueOn);
+    setToggle('tgKiller', s.killerOn);
+    setToggle('tgMonkey', s.monkeyOn);
+    const startBtn = document.getElementById('startBtn');
+    startBtn.textContent = s.running ? 'STOP' : 'START';
+    startBtn.classList.toggle('running', s.running);
+
+    const updateBtn = document.getElementById('updateBtn');
+    const subtitle = document.getElementById('subtitleTxt');
+    if (s.updateAvailable) {
+      updateBtn.style.display = 'flex';
+      subtitle.textContent = 'UPDATE v' + s.updateVersion + ' AVAILABLE - CLICK';
+      subtitle.classList.add('updateReady');
+      subtitle.onclick = () => ahk.StartUpdate();
+    } else {
+      updateBtn.style.display = 'none';
+      subtitle.textContent = DEFAULT_SUBTITLE;
+      subtitle.classList.remove('updateReady');
+      subtitle.onclick = null;
+    }
+  } catch (e) { /* host not ready yet */ }
+}
+
+function setToggle(id, on) {
+  document.getElementById(id).classList.toggle('on', !!on);
+}
+
+function toggleFeature(which) {
+  const el = document.getElementById('tg' + which.charAt(0).toUpperCase() + which.slice(1));
+  const newVal = !el.classList.contains('on');
+  if (which === 'queue') ahk.SetQueue(newVal);
+  if (which === 'killer') ahk.SetKiller(newVal);
+  if (which === 'monkey') ahk.SetMonkey(newVal);
+  setToggle(el.id, newVal);
+}
+
+init();
+</script>
+</body>
+</html>
