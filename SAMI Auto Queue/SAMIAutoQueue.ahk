@@ -315,7 +315,10 @@ CheckForUpdateOnce() {
             tag := m[1]
         if (tag = "" || !VersionIsNewer(tag, APP_VERSION))
             return
-        pattern := '"name"\s*:\s*"' UPDATE_ASSET_NAME '"[^}]*?"browser_download_url"\s*:\s*"([^"]+)"'
+        ; the asset's own download URL ends with its filename, so this doesn't need to assume
+        ; which field GitHub's JSON puts first (browser_download_url actually comes BEFORE name
+        ; in the real response - a "name" ... "browser_download_url" pattern never matches)
+        pattern := '"browser_download_url"\s*:\s*"([^"]*/' UPDATE_ASSET_NAME ')"'
         if !RegExMatch(json, pattern, &m2)
             return
         updateVersionStr := RegExReplace(tag, "^[vV]")
