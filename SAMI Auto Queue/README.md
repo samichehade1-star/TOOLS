@@ -1,8 +1,8 @@
 # SAMI Auto Queue
 
-Automation for Halloween (Ravage): auto-requeues after a match, mashes the
-killer ability the instant it's up, and can auto-leave a lobby that doesn't
-match a name filter (or that's just sitting idle too long).
+Auto-requeues after a match, mashes the killer ability the instant it's up,
+and can auto-leave a lobby that doesn't match a name filter (or that's just
+sitting idle too long).
 
 ## Just run it
 
