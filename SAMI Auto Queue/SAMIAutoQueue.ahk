@@ -25,12 +25,13 @@ TARGET_PROCESS := "Halloween.exe"
 
 ; bump this on every release pushed to UPDATE_REPO - CheckForUpdateOnce() compares it against the
 ; latest GitHub release tag there to decide whether to show the update prompt.
-APP_VERSION := "1.1.0"
+APP_VERSION := "1.2.0"
 UPDATE_REPO := "samichehade1-star/sami-auto-queue"
 UPDATE_ASSET_NAME := "SAMIAutoQueue.zip"
 
 SETTINGS_INI := A_ScriptDir "\autoqueue_settings.ini"
 MATCHED_NAMES_FILE := A_ScriptDir "\matched_names.txt"
+PERSISTENT_LOG_FILE := A_ScriptDir "\activity_log.txt"
 
 DARK_BG   := "0A0A0C"
 DARK_EDIT := "151518"
@@ -97,13 +98,6 @@ if FileExist(MATCHED_NAMES_FILE) {
 }
 global handsSeen := false, matchSeen := false, lobbySeen := false, errorDialogSeen := false
 global lastErrorDialogErrLog := 0, lastErrorDialogLog := 0
-; ScanLoop (500ms) and MonkeyLoop (600ms) are independent timers, but OCR.ahk's WaitForAsync waits
-; via Sleep(0)/Sleep(-1), which pumps messages - so the OTHER timer can fire and issue its own OCR
-; call WHILE one is already in flight. The OCR engine isn't built for that: a second concurrent
-; RecognizeAsync kills the first one with "AsyncInfo failed with status error ..." (seen constantly
-; in the log, aborting CaptureNames mid-roster and causing slow/missed name captures). This lock
-; makes the two timers mutually exclusive around any OCR call so only one is ever in flight.
-global ocrBusy := false
 global startupPressSeen := false, loginScreenSeen := false
 global lastStartupErrLog := 0, lastStartupLog := 0
 global lastLoginErrLog := 0, lastLoginLog := 0
@@ -185,8 +179,10 @@ A_TrayMenu.Add("Exit", (*) => ExitApp())
 A_TrayMenu.Default := "Show window"
 A_IconTip := "SAMI - Auto Queue"
 
-SetTimer(ScanLoop, 500)
-SetTimer(MonkeyLoop, 600)
+; ScanLoop and MonkeyLoop used to be two independent timers (500ms/600ms), both issuing OCR calls
+; against the same underlying engine - they got merged into MainLoop() below specifically because
+; that setup let one starve the other out. See MainLoop's own comment for the full story.
+SetTimer(MainLoop, 150)
 SetTimer(UpdateActiveUserWindow, 300)
 SetTimer(RefreshLogWindow, 500)
 SetTimer(CheckForUpdateOnce, -3000)  ; one-shot, after the dashboard has had time to come up
@@ -876,10 +872,15 @@ SendGameKeyTimed(keyName) {
 }
 
 LogMsg(m) {
-    global activityLog
-    activityLog .= "[" FormatTime(A_Now, "HH:mm:ss") "] " m "`n"
+    global activityLog, PERSISTENT_LOG_FILE
+    line := "[" FormatTime(A_Now, "HH:mm:ss") "] " m
+    activityLog .= line "`n"
     if (StrLen(activityLog) > 20000)
         activityLog := SubStr(activityLog, -15000)
+    ; the in-memory log (above) is all the dashboard shows, but it's lost the moment the app
+    ; restarts - which is exactly what happened mid-investigation of a real reported bug (the app
+    ; had restarted, taking the only copy of the relevant log with it). This survives that.
+    try FileAppend("[" FormatTime(A_Now, "yyyy-MM-dd HH:mm:ss") "] " m "`n", PERSISTENT_LOG_FILE, "UTF-8")
 }
 
 ; ------------------------------------------------------------ scanning ----
@@ -893,10 +894,21 @@ GetGameRect(&gx, &gy, &gw, &gh) {
     }
 }
 
-ScanLoop() {
-    global masterRunning, queueOn, killerOn, lastNoWinLog, TARGET_PROCESS, handsSeen, matchSeen, lobbySeen, errorDialogSeen
-    global startupPressSeen, loginScreenSeen, ocrBusy
-    if !masterRunning || (!queueOn && !killerOn)
+; Was two separate timers (ScanLoop + MonkeyLoop) fighting over the same OCR engine - each one
+; issuing OCR.ahk calls, which wait via Sleep(0)/Sleep(-1) that pumps messages, so the OTHER timer
+; could fire mid-call and submit a second concurrent OCR request, killing the first with "AsyncInfo
+; failed...". That got "fixed" earlier with a shared ocrBusy lock making them mutually exclusive -
+; but that only traded corruption for starvation: whichever timer was mid-cycle when the other
+; fired caused the other to skip that tick ENTIRELY, including not even attempting its OCR calls.
+; Confirmed live and directly: a lobby with a real, consistent ~10s window reliably only yielded
+; 1-3 of 5 names captured before the match started - the Monkey Finder side was getting starved out
+; by Auto Queue's checks a large fraction of the time, not failing to read fast enough once it ran.
+; One single loop has nothing left to contend with - every check runs every single cycle, always.
+MainLoop() {
+    global masterRunning, queueOn, killerOn, monkeyOn, lastNoWinLog, TARGET_PROCESS
+    global handsSeen, matchSeen, lobbySeen, errorDialogSeen, startupPressSeen, loginScreenSeen
+    global lastMonkeyErrLog
+    if !masterRunning || (!queueOn && !killerOn && !monkeyOn)
         return
     if !GetGameRect(&gx, &gy, &gw, &gh) {
         if (A_TickCount - lastNoWinLog > 30000) {
@@ -908,15 +920,25 @@ ScanLoop() {
         return
     }
     if killerOn
-        try DetectHands()   ; pixel-based, not OCR - doesn't need the lock
-    if queueOn && !ocrBusy {
-        ocrBusy := true
+        try DetectHands()   ; pixel-based, not OCR
+    ; Monkey Finder goes first, every cycle - the lobby roster window is the most time-critical
+    ; thing this script ever reacts to, and nothing should get a chance to push it back in line.
+    if monkeyOn {
+        try {
+            CaptureNames()
+        } catch as e {
+            if (A_TickCount - lastMonkeyErrLog > 5000) {
+                LogMsg("Monkey Finder error: " e.Message " (" e.What ", line " e.Line ")")
+                lastMonkeyErrLog := A_TickCount
+            }
+        }
+    }
+    if queueOn {
         try DetectErrorDialog(gx, gy, gw, gh)
         try DetectStartupPress(gx, gy, gw, gh)
         try DetectLoginScreen(gx, gy, gw, gh)
         try DetectMatchBar(gx, gy, gw, gh)
         try DetectLobby(gx, gy, gw, gh)
-        ocrBusy := false
     }
 }
 
@@ -1114,20 +1136,42 @@ DetectMatchBar(gx, gy, gw, gh) {
             if (remaining > 0) {
                 LogMsg("Match summary bar seen, but still cooling down (" Round(remaining / 1000, 1) "s left) - not acting yet.")
             } else {
-                LogMsg("Match summary bar seen -> Escape.")
-                SendGameKeyTimed("Escape")
-                Sleep(2000)
-                SendGameKeyTimed("Right")
-                Sleep(300)
-                SendGameKeyTimed("Enter")
-                LogMsg("-> Right -> Enter.")
                 lastQueueAction := A_TickCount
-                matchSeen := true
+                matchSeen := PressMatchSummaryEscape(x1, y1, x2, y2)
             }
         }
     } else {
         matchSeen := false
     }
+}
+
+; same verify-and-retry reasoning as PressMatchmakeEnter below - a single blind Escape/Right/Enter
+; sequence isn't trustworthy, so this actually checks the summary bar is gone before latching.
+PressMatchSummaryEscape(x1, y1, x2, y2) {
+    maxAttempts := 3
+    Loop maxAttempts {
+        attempt := A_Index
+        LogMsg("Match summary bar seen -> Escape." (attempt > 1 ? " (retry " attempt ")" : ""))
+        SendGameKeyTimed("Escape")
+        Sleep(2000)
+        SendGameKeyTimed("Right")
+        Sleep(300)
+        SendGameKeyTimed("Enter")
+        LogMsg("-> Right -> Enter.")
+        Sleep(700)
+        stillThere := false
+        try {
+            result := OCR.FromRect(Round(x1), Round(y1), Round(x2 - x1), Round(y2 - y1), {scale: 3, grayscale: 1})
+            clean := RegExReplace(StrUpper(result.Text), "[^A-Z]")
+            stillThere := FuzzyContains(clean, "SUMMARY", 2)
+        } catch {
+            stillThere := false
+        }
+        if !stillThere
+            return true
+    }
+    LogMsg("Match summary bar still showing after " maxAttempts " attempts - will keep trying.")
+    return false
 }
 
 ; OCR-based too, same reasoning as DetectMatchBar - this used to ImageSearch a pixel crop of the
@@ -1163,15 +1207,41 @@ DetectLobby(gx, gy, gw, gh) {
             if (remaining > 0) {
                 LogMsg("Lobby menu seen, but still cooling down (" Round(remaining / 1000, 1) "s left) - not acting yet.")
             } else {
-                LogMsg("Lobby menu seen -> Enter.")
-                SendGameKeyTimed("Enter")
                 lastQueueAction := A_TickCount
-                lobbySeen := true
+                lobbySeen := PressMatchmakeEnter(x1, y1, x2, y2)
             }
         }
     } else {
         lobbySeen := false
     }
+}
+
+; sends Enter on the matchmake menu, then actually verifies it worked instead of assuming it did -
+; confirmed live that a single blind press can just not register: the menu sat reading "MATCHMAKE"
+; continuously for minutes afterward with lobbySeen latched true (since the old code assumed one
+; press was enough) and no further attempt ever made. Mirrors LeaveLobbyAndRequeue's approach.
+; Returns true (latch) once the menu's actually gone, false (don't latch - retry next poll) if
+; every attempt here failed to move past it.
+PressMatchmakeEnter(x1, y1, x2, y2) {
+    maxAttempts := 3
+    Loop maxAttempts {
+        attempt := A_Index
+        SendGameKeyTimed("Enter")
+        LogMsg("Lobby menu seen -> Enter." (attempt > 1 ? " (retry " attempt ")" : ""))
+        Sleep(700)
+        stillThere := false
+        try {
+            result := OCR.FromRect(Round(x1), Round(y1), Round(x2 - x1), Round(y2 - y1), {scale: 3, grayscale: 1})
+            clean := RegExReplace(StrUpper(result.Text), "[^A-Z]")
+            stillThere := FuzzyContains(clean, "MATCHMAKE", 2)
+        } catch {
+            stillThere := false
+        }
+        if !stillThere
+            return true
+    }
+    LogMsg("Matchmake menu still showing after " maxAttempts " Enter presses - will keep trying.")
+    return false
 }
 
 TestNow() {
@@ -1210,22 +1280,6 @@ TestOcrBox(name, x1, y1, x2, y2, keyword) {
 }
 
 ; --------------------------------------------------------- monkey finder ----
-MonkeyLoop() {
-    global masterRunning, monkeyOn, lastMonkeyErrLog, ocrBusy
-    if !masterRunning || !monkeyOn || ocrBusy
-        return
-    ocrBusy := true
-    try {
-        CaptureNames()
-    } catch as e {
-        if (A_TickCount - lastMonkeyErrLog > 5000) {
-            LogMsg("Monkey Finder error: " e.Message " (" e.What ", line " e.Line ")")
-            lastMonkeyErrLog := A_TickCount
-        }
-    }
-    ocrBusy := false
-}
-
 CaptureNames() {
     global lastCapturedNames, pendingNames, pendingCounts, wmNameTxt, wmLogEdit, NAME_BOXES, LOBBY_HEADER_BOX, monkeyDecided
     global lobbyFirstSeenAt, lobbyIdleTimeoutSec
@@ -1291,10 +1345,19 @@ CaptureNames() {
         ; between a duplicate copy of itself on every single capture (wmLogEdit.Value appeared on
         ; both sides of the concatenation), so the box's content roughly doubled on every name
         ; read and quickly became huge enough that scrolling stopped working.
-        newLog := label " (" box.label "):`r`n" text "`r`n`r`n" wmLogEdit.Value
-        if (StrLen(newLog) > 20000)
-            newLog := SubStr(newLog, 1, 15000)
-        try wmLogEdit.Value := newLog
+        ; the READ of wmLogEdit.Value (not just the write) has to be inside the try - this control
+        ; is destroyed the moment the user closes the Monkey Finder settings popup, and reading a
+        ; destroyed control's .Value throws. That exception used to escape uncaught here, aborting
+        ; the rest of CaptureNames() for that cycle - including the "decide stay or leave" logic
+        ; further down, which never got a chance to run. Confirmed live: a lobby gate-PASS followed
+        ; immediately by this exact exception, with no "leaving and re-queuing" line ever following
+        ; it, consistent with every report of a non-matching lobby just not getting left.
+        try {
+            newLog := label " (" box.label "):`r`n" text "`r`n`r`n" wmLogEdit.Value
+            if (StrLen(newLog) > 20000)
+                newLog := SubStr(newLog, 1, 15000)
+            wmLogEdit.Value := newLog
+        }
     }
     if changed
         try wmNameTxt.Text := BuildNameSummary()
@@ -1325,6 +1388,11 @@ CaptureNames() {
 ; still up - so one blind attempt isn't trustworthy. This retries, with a leading Escape on each
 ; retry to close whatever unexpected menu might be sitting open, and gives up loudly (rather than
 ; silently) if it truly can't get out.
+; Timing is deliberately tight: a real lobby can have only ~10s between "all 5 names known" and
+; the match actually launching (names only finish OCR-reading once every slot is filled, which can
+; itself eat a big chunk of that window), so every extra millisecond here is time this can't afford
+; to spend double-checking. SendGameKeyTimed's own internal timing is untouched (that's proven,
+; reliable input delivery) - only the inter-step/settle waits added for retry-verification are cut.
 LeaveLobbyAndRequeue(gx, gy, gw, gh) {
     global monkeyDecided
     maxAttempts := 3
@@ -1333,16 +1401,16 @@ LeaveLobbyAndRequeue(gx, gy, gw, gh) {
         if (attempt > 1) {
             ; closes whatever unexpected menu/popup might be open from the previous failed attempt
             SendGameKeyTimed("Escape")
-            Sleep(400)
+            Sleep(250)
         }
         SendGameKeyTimed("Escape")
-        Sleep(250)
+        Sleep(150)
         SendGameKeyTimed("Enter")
-        Sleep(250)
+        Sleep(150)
         SendGameKeyTimed("Right")
-        Sleep(250)
+        Sleep(150)
         SendGameKeyTimed("Enter")
-        Sleep(1200)  ; let the menu transition settle before checking what's actually on screen
+        Sleep(700)  ; let the menu transition settle before checking what's actually on screen
         if !GetGameRect(&vgx, &vgy, &vgw, &vgh) || !IsLobbyScreenVisible(vgx, vgy, vgw, vgh) {
             if (attempt > 1)
                 LogMsg("Monkey Finder: left successfully on retry " attempt ".")
