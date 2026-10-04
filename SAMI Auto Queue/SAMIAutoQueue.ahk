@@ -25,7 +25,7 @@ TARGET_PROCESS := "Halloween.exe"
 
 ; bump this on every release pushed to UPDATE_REPO - CheckForUpdateOnce() compares it against the
 ; latest GitHub release tag there to decide whether to show the update prompt.
-APP_VERSION := "1.2.0"
+APP_VERSION := "1.3.0"
 UPDATE_REPO := "samichehade1-star/sami-auto-queue"
 UPDATE_ASSET_NAME := "SAMIAutoQueue.zip"
 
@@ -66,6 +66,7 @@ LOGIN_SCREEN_BOX  := {x1: 0.46, y1: 0.66, x2: 0.56, y2: 0.78}
 global queueOn := (IniRead(SETTINGS_INI, "settings", "queueon", "0") = "1")
 global killerOn := (IniRead(SETTINGS_INI, "settings", "killeron", "0") = "1")
 global monkeyOn := (IniRead(SETTINGS_INI, "settings", "monkeyon", "0") = "1")
+global voiceOn := (IniRead(SETTINGS_INI, "settings", "voiceon", "0") = "1")
 global masterRunning := false   ; START/STOP - gates whether anything scans at all, separate from
                                  ; which features are selected via their toggles
 global activityLog := ""
@@ -86,6 +87,34 @@ global lobbyFirstSeenAt := 0
 
 global killerPressCount := 0  ; resets to 0 each launch - not persisted, just this session's count
 
+; streamer mode - a fully transparent, click-through, top-right HUD showing the kill counter,
+; deliberately NOT excluded from screen capture (unlike mainGui/logGui) so it actually shows up on
+; stream. OBS note: this is a normal window, not a DirectX overlay hook - OBS's "Game Capture"
+; source needs "Capture third-party overlays" enabled to see it, or use Display/Window Capture.
+global streamerMode := (IniRead(SETTINGS_INI, "settings", "streamermode", "0") = "1")
+global killerHudGui := 0, killerHudTxt := 0
+
+; voice soundboard - fires through Voicemod (or similar) once Monkey Finder decides to stay in a
+; match (covers both "filter actually matched" and "no filter configured", since those share the
+; same stay branch already). Open-mic only: slot 1 plays immediately; slots 2-5 each wait their own
+; delay after the PREVIOUS sound before playing - an empty hotkey means that slot is unused.
+; Push-to-talk was tried (several ways: SendEvent, SendInput, single hold, continuously
+; re-asserted hold) and dropped - every synthetic key-hold behaved like a brief tap in Voicemod even
+; though physically holding the key worked perfectly, consistent with push-to-talk software
+; distinguishing real hardware input from any form of injected input.
+global voiceSoundSlots := [
+    {hotkey: IniRead(SETTINGS_INI, "settings", "sound1key", ""), delayMs: 0},
+    {hotkey: IniRead(SETTINGS_INI, "settings", "sound2key", ""), delayMs: IniRead(SETTINGS_INI, "settings", "sound2delay", "800") + 0},
+    {hotkey: IniRead(SETTINGS_INI, "settings", "sound3key", ""), delayMs: IniRead(SETTINGS_INI, "settings", "sound3delay", "800") + 0},
+    {hotkey: IniRead(SETTINGS_INI, "settings", "sound4key", ""), delayMs: IniRead(SETTINGS_INI, "settings", "sound4delay", "800") + 0},
+    {hotkey: IniRead(SETTINGS_INI, "settings", "sound5key", ""), delayMs: IniRead(SETTINGS_INI, "settings", "sound5delay", "800") + 0},
+]
+
+; second, independent trigger for the same sound sequence above - fires N seconds after the Killer
+; ability key is actually sent, instead of (or alongside) the Monkey Finder stay-decision trigger.
+global killerSoundEnabled := (IniRead(SETTINGS_INI, "settings", "killersoundenabled", "0") = "1")
+global killerSoundDelaySec := IniRead(SETTINGS_INI, "settings", "killersounddelay", "3") + 0
+
 ; cumulative, deduplicated list of full names that ever matched a filter, across all sessions -
 ; loaded from MATCHED_NAMES_FILE at startup so a restart doesn't lose history or re-add duplicates.
 global matchedNamesSeen := Map()
@@ -97,6 +126,7 @@ if FileExist(MATCHED_NAMES_FILE) {
     }
 }
 global handsSeen := false, matchSeen := false, lobbySeen := false, errorDialogSeen := false
+global matchBarConsecutive := 0
 global lastErrorDialogErrLog := 0, lastErrorDialogLog := 0
 global startupPressSeen := false, loginScreenSeen := false
 global lastStartupErrLog := 0, lastStartupLog := 0
@@ -108,6 +138,26 @@ global lastNoWinLog := 0
 global lastMatchBarErrLog := 0, lastMatchBarLog := 0
 global lastLobbyErrLog := 0, lastLobbyLog := 0
 
+; crash recovery - if Halloween.exe disappears after we've already seen it running once this session,
+; relaunch it via the Visenya loader (a ReShade-based accessibility tool the user confirmed is from a
+; trusted source) and bring the game back automatically. The loader's own exe filename has two
+; zero-width-space characters spliced into it (U+200B, between "Hall" and "oween") and its process/
+; window name randomizes on every single launch, so it can't be found by name - everything here is
+; driven by fixed, pre-recorded screen coordinates instead (confirmed consistent across multiple runs,
+; same monitor/resolution). User's explicit standing instruction: click OK on any prompt that appears
+; during this whole flow, don't stop to ask.
+global haveSeenHalloweenRunning := false
+global crashRecoveryInProgress := false
+global lastCrashRecoveryAttempt := 0
+VISENYA_LAUNCHER_DIR := "C:\Users\Sami1\Desktop\Hax\Halloween"
+VISENYA_OK_BTN := {x: 1036, y: 602}       ; "update available" confirmation dialog's OK button
+VISENYA_LAUNCH_BTN := {x: 1158, y: 698}   ; the loader's own "> Launch" control
+; the loader's status line (reads Idle -> Please wait... -> Waiting for Halloween...), measured via
+; UI Automation BoundingRectangle - generously wide since "Waiting for Halloween..." is much longer
+; than "Idle" and this is a plain OCR box, not a resize-aware control.
+VISENYA_STATUS_BOX := {x1: 733, y1: 685, x2: 1130, y2: 710}
+STEAM_APP_ID := "3219630"
+
 ; ability icon - calibrated by clicking it live on screen (fraction of the game window) + its exact color
 global abilityX := IniRead(SETTINGS_INI, "settings", "abilityx", "0") + 0
 global abilityY := IniRead(SETTINGS_INI, "settings", "abilityy", "0") + 0
@@ -118,6 +168,9 @@ global lastUserHwnd := 0
 
 global mainGui, wv
 global toggleHk, keyHk, pixelStatusTxt, tolEdit, queueCooldownEdit, filterEdit, wmNameTxt, wmLogEdit
+global soundHkCtrls, soundDelayCtrls
+global streamerCheckbox
+global killerSoundCheckbox, killerSoundDelayEdit
 global logGui := 0, logEditCtl := 0
 global updateAvailable := false, updateVersionStr := "", updateDownloadUrl := ""
 global dragActive := false, dragStartMouseX := 0, dragStartMouseY := 0, dragStartWinX := 0, dragStartWinY := 0
@@ -140,7 +193,7 @@ mainGui.OnEvent("Close", (*) => mainGui.Hide())
 ; the game underneath it. Needs Windows 10 2004+; DllCall just no-ops on older builds.
 DllCall("user32\SetWindowDisplayAffinity", "ptr", mainGui.Hwnd, "uint", 0x11)  ; WDA_EXCLUDEFROMCAPTURE
 mainGui.OnEvent("Escape", (*) => mainGui.Hide())
-mainGui.Show("w380 h386")
+mainGui.Show("w380 h446")
 
 dllPath := A_ScriptDir "\lib\WebView2\64bit\WebView2Loader.dll"
 dataDir := A_ScriptDir "\webview_data"
@@ -152,10 +205,12 @@ try {
         SetQueue: SetQueueOn,
         SetKiller: SetKillerOn,
         SetMonkey: SetMonkeyOn,
+        SetVoice: SetVoiceOn,
         ToggleAll: ToggleAllFeatures,
         OpenQueueSettings: OpenQueueSettings,
         OpenKillerSettings: OpenKillerSettings,
         OpenMonkeySettings: OpenMonkeySettings,
+        OpenVoiceboardSettings: OpenVoiceboardSettings,
         TestNow: TestNow,
         OpenLogWindow: OpenLogWindow,
         StartDrag: StartDragMainWindow,
@@ -171,6 +226,10 @@ try {
 }
 
 RegisterToggleHotkey(toggleHotkey)
+if streamerMode {
+    EnsureKillerHud()
+    UpdateKillerHud()
+}
 
 A_TrayMenu.Delete()
 A_TrayMenu.Add("Show window", (*) => ShowWin())
@@ -196,10 +255,11 @@ ToggleAllFeatures(*) {
 }
 
 GetStatusJson() {
-    global queueOn, killerOn, monkeyOn, masterRunning, activityLog, updateAvailable, updateVersionStr, killerPressCount
+    global queueOn, killerOn, monkeyOn, voiceOn, masterRunning, activityLog, updateAvailable, updateVersionStr, killerPressCount
     return '{"queueOn":' (queueOn ? "true" : "false")
         . ',"killerOn":' (killerOn ? "true" : "false")
         . ',"monkeyOn":' (monkeyOn ? "true" : "false")
+        . ',"voiceOn":' (voiceOn ? "true" : "false")
         . ',"running":' (masterRunning ? "true" : "false")
         . ',"updateAvailable":' (updateAvailable ? "true" : "false")
         . ',"updateVersion":"' updateVersionStr '"'
@@ -222,6 +282,41 @@ SetDarkTitleBar(hwnd) {
 ShowWin() {
     global mainGui
     mainGui.Show()
+}
+
+; ------------------------------------------------------------ streamer mode HUD ----
+; Deliberately NOT given the WDA_EXCLUDEFROMCAPTURE treatment that mainGui/logGui get - this one's
+; whole purpose is to show up on stream, the opposite of the dashboard's goal of never contaminating
+; screen-capture-based detection.
+EnsureKillerHud() {
+    global killerHudGui, killerHudTxt
+    if killerHudGui
+        return
+    killerHudGui := Gui("-Caption +Border +AlwaysOnTop +ToolWindow +E0x20", "SAMI - Killer HUD")
+    ; +E0x20 = WS_EX_TRANSPARENT (click-through - never intercepts mouse input over the game)
+    killerHudGui.BackColor := "0A0A0C"
+    killerHudGui.MarginX := 12
+    killerHudGui.MarginY := 8
+    killerHudGui.SetFont("s16 bold cFF8C1A", "Segoe UI")
+    ; fixed width generous enough for up to 3-digit counts ("MONKEYS KILLED: 999") so the window
+    ; never needs to resize as the number grows. A plain AutoSize-at-creation approach was tried
+    ; first and left the number clipped off entirely as soon as it got longer than "0" - the
+    ; control's pixel width was locked in at creation time and never grew when .Text later changed
+    ; to something wider, since changing .Text alone doesn't resize the control or window.
+    killerHudTxt := killerHudGui.AddText("w280", "MONKEYS KILLED: 0")
+    killerHudGui.Show("NoActivate")
+    ; makes the background color itself invisible, leaving only the text visible - "fully
+    ; transparent" as requested, not just a dark box with text in it
+    WinSetTransColor("0A0A0C", "ahk_id " killerHudGui.Hwnd)
+    WinGetPos(, , &w, &h, "ahk_id " killerHudGui.Hwnd)
+    killerHudGui.Move(A_ScreenWidth - w - 24, 24)
+}
+
+UpdateKillerHud() {
+    global streamerMode, killerHudGui, killerHudTxt, killerPressCount
+    if (!streamerMode || !killerHudGui)
+        return
+    try killerHudTxt.Text := "MONKEYS KILLED: " (killerPressCount * 4)
 }
 
 ; the window is borderless (-Caption), so dragging has to be done manually. Two approaches were
@@ -475,6 +570,13 @@ SetMonkeyOn(v) {
     LogMsg(v ? "Monkey Finder: on." : "Monkey Finder: off.")
 }
 
+SetVoiceOn(v) {
+    global voiceOn, SETTINGS_INI
+    voiceOn := v
+    IniWrite(v ? 1 : 0, SETTINGS_INI, "settings", "voiceon")
+    LogMsg(v ? "Voice soundboard: on." : "Voice soundboard: off.")
+}
+
 ToggleFromHotkey(*) {
     ToggleAllFeatures()
 }
@@ -547,8 +649,8 @@ RegisterToggleHotkey(spec) {
 }
 
 OpenKillerSettings(*) {
-    global mainGui, DARK_BG, DARK_EDIT, DARK_TEXT, DARK_DIM, ACCENT, readyKey, abilityTolerance
-    global keyHk, pixelStatusTxt, tolEdit
+    global mainGui, DARK_BG, DARK_EDIT, DARK_TEXT, DARK_DIM, ACCENT, readyKey, abilityTolerance, streamerMode
+    global keyHk, pixelStatusTxt, tolEdit, streamerCheckbox
     g := Gui("+AlwaysOnTop +Owner" mainGui.Hwnd, "KILLER - settings")
     g.BackColor := DARK_BG
     SetDarkTitleBar(g.Hwnd)
@@ -574,8 +676,31 @@ OpenKillerSettings(*) {
     saveTolBtn := g.AddButton("x+8 yp w80", "Save")
     saveTolBtn.OnEvent("Click", (*) => SaveTolerance())
 
+    g.SetFont("s9 bold c" ACCENT, "Segoe UI")
+    g.AddText("xm y+16 w320", "STREAMER MODE")
+    g.SetFont("s8 c" DARK_DIM, "Segoe UI")
+    g.AddText("xm y+2 w320", "Shows a transparent kill counter in the top-right corner of the screen. Unlike the dashboard, this IS visible to screen capture so it shows on stream. For OBS Game Capture specifically, enable 'Capture third-party overlays' - otherwise use Display/Window Capture.")
+    g.SetFont("s10 norm c" DARK_TEXT, "Segoe UI")
+    streamerCheckbox := g.AddCheckbox("xm y+6 w250", "Show kill counter overlay")
+    streamerCheckbox.Value := streamerMode
+    streamerCheckbox.OnEvent("Click", (*) => SaveStreamerMode())
+
     g.OnEvent("Close", (*) => g.Destroy())
     g.Show()
+}
+
+SaveStreamerMode() {
+    global streamerCheckbox, streamerMode, SETTINGS_INI, killerHudGui
+    streamerMode := streamerCheckbox.Value
+    IniWrite(streamerMode ? 1 : 0, SETTINGS_INI, "settings", "streamermode")
+    if streamerMode {
+        EnsureKillerHud()
+        UpdateKillerHud()
+        killerHudGui.Show("NoActivate")
+    } else if killerHudGui {
+        killerHudGui.Hide()
+    }
+    LogMsg("Streamer mode: " (streamerMode ? "on." : "off."))
 }
 
 SaveKey() {
@@ -669,6 +794,82 @@ ExportMatchedNames() {
     } catch as e {
         MsgBox("Export failed: " e.Message, "SAMI - Auto Queue", "Icon!")
     }
+}
+
+; ------------------------------------------------------------ voice soundboard settings ----
+; Open-mic only - push-to-talk was tried several ways (see the note by voiceSoundSlots above) and
+; never worked reliably, since Voicemod/Windows treats synthetic key holds differently from a real
+; physical hold no matter how the hold was injected. No PTT option here anymore as a result.
+OpenVoiceboardSettings(*) {
+    global mainGui, DARK_BG, DARK_EDIT, DARK_TEXT, DARK_DIM, ACCENT, voiceSoundSlots, killerSoundEnabled, killerSoundDelaySec
+    global soundHkCtrls, soundDelayCtrls, killerSoundCheckbox, killerSoundDelayEdit
+    g := Gui("+AlwaysOnTop +Owner" mainGui.Hwnd, "VOICE SOUNDBOARD - settings")
+    g.BackColor := DARK_BG
+    SetDarkTitleBar(g.Hwnd)
+    g.MarginX := 14
+    g.MarginY := 12
+
+    g.SetFont("s9 bold c" ACCENT, "Segoe UI")
+    g.AddText("xm ym w400", "SOUNDS (VOICEMOD HOTKEYS, OPEN MIC ONLY)")
+    g.SetFont("s8 c" DARK_DIM, "Segoe UI")
+    g.AddText("xm y+2 w400", "Sound 1 plays immediately; each sound after that waits its own delay after the previous one. Leave a hotkey blank to skip that slot.")
+
+    soundHkCtrls := [], soundDelayCtrls := [""]  ; index 1 unused - slot 1 has no delay field
+    g.SetFont("s9 norm c" DARK_TEXT, "Segoe UI")
+    Loop 5 {
+        i := A_Index
+        label := (i = 1) ? "Sound 1 (first):" : "Sound " i ":"
+        g.AddText("xm y+8 w110", label)
+        hk := g.AddHotkey("x+4 yp-3 w110", voiceSoundSlots[i].hotkey)
+        soundHkCtrls.Push(hk)
+        if (i > 1) {
+            g.AddText("x+10 yp+3 w60", "Delay (ms):")
+            de := g.AddEdit("x+4 yp-3 w60 Background" DARK_EDIT " c" DARK_TEXT, String(voiceSoundSlots[i].delayMs))
+            soundDelayCtrls.Push(de)
+        }
+    }
+
+    g.SetFont("s9 bold c" ACCENT, "Segoe UI")
+    g.AddText("xm y+16 w400", "PLAY AFTER KILLER ABILITY")
+    g.SetFont("s8 c" DARK_DIM, "Segoe UI")
+    g.AddText("xm y+2 w400", "Separately from the lobby trigger above, also play the same sound sequence a set delay after the Killer ability key is actually sent.")
+    g.SetFont("s10 norm c" DARK_TEXT, "Segoe UI")
+    killerSoundCheckbox := g.AddCheckbox("xm y+6 w220", "Also play after Killer ability fires")
+    killerSoundCheckbox.Value := killerSoundEnabled
+    g.AddText("x+10 yp+3 w90", "Delay (sec):")
+    killerSoundDelayEdit := g.AddEdit("x+4 yp-3 w50 Background" DARK_EDIT " c" DARK_TEXT, String(killerSoundDelaySec))
+
+    saveBtn := g.AddButton("xm y+16 w200", "Save")
+    saveBtn.OnEvent("Click", (*) => SaveVoiceboardSettings())
+
+    g.OnEvent("Close", (*) => g.Destroy())
+    g.Show()
+}
+
+SaveVoiceboardSettings() {
+    global soundHkCtrls, soundDelayCtrls, voiceSoundSlots, SETTINGS_INI
+    global killerSoundCheckbox, killerSoundDelayEdit, killerSoundEnabled, killerSoundDelaySec
+    killerSoundEnabled := killerSoundCheckbox.Value
+    killerSoundDelaySec := Max(0, Integer(killerSoundDelayEdit.Value))
+    IniWrite(killerSoundEnabled ? 1 : 0, SETTINGS_INI, "settings", "killersoundenabled")
+    IniWrite(killerSoundDelaySec, SETTINGS_INI, "settings", "killersounddelay")
+    Loop 5 {
+        i := A_Index
+        voiceSoundSlots[i].hotkey := soundHkCtrls[i].Value
+        IniWrite(voiceSoundSlots[i].hotkey, SETTINGS_INI, "settings", "sound" i "key")
+        if (i > 1) {
+            v := Integer(soundDelayCtrls[i].Value)
+            if (v < 0)
+                v := 0
+            voiceSoundSlots[i].delayMs := v
+            IniWrite(v, SETTINGS_INI, "settings", "sound" i "delay")
+        }
+    }
+    configured := 0
+    for slot in voiceSoundSlots
+        if (Trim(slot.hotkey) != "")
+            configured++
+    LogMsg("Voice soundboard settings saved: " configured " sound(s) configured.")
 }
 
 SaveIdleTimeout() {
@@ -871,6 +1072,30 @@ SendGameKeyTimed(keyName) {
     return true
 }
 
+; ------------------------------------------------------------ voice soundboard ----
+; Voicemod's soundboard hotkeys are global (its own low-level keyboard hook, same as most
+; push-to-talk software), so unlike game keys this deliberately does NOT tab into/out of the game
+; window - sending it directly works regardless of what's focused, and tabbing away mid-match would
+; be actively harmful (interrupts whatever the user is doing right when a match starts).
+; open-mic only (see the note by voiceSoundSlots's declaration for why PTT was dropped entirely).
+PlayVoiceboardSequence() {
+    global voiceOn, voiceSoundSlots
+    if !voiceOn
+        return
+    active := []
+    for slot in voiceSoundSlots
+        if (Trim(slot.hotkey) != "")
+            active.Push(slot)
+    if (active.Length = 0)
+        return
+    for slot in active {
+        if (slot.delayMs > 0)
+            Sleep(slot.delayMs)
+        SendEvent(slot.hotkey)
+    }
+    LogMsg("Voice soundboard: played " active.Length " sound(s).")
+}
+
 LogMsg(m) {
     global activityLog, PERSISTENT_LOG_FILE
     line := "[" FormatTime(A_Now, "HH:mm:ss") "] " m
@@ -907,7 +1132,7 @@ GetGameRect(&gx, &gy, &gw, &gh) {
 MainLoop() {
     global masterRunning, queueOn, killerOn, monkeyOn, lastNoWinLog, TARGET_PROCESS
     global handsSeen, matchSeen, lobbySeen, errorDialogSeen, startupPressSeen, loginScreenSeen
-    global lastMonkeyErrLog
+    global lastMonkeyErrLog, haveSeenHalloweenRunning
     if !masterRunning || (!queueOn && !killerOn && !monkeyOn)
         return
     if !GetGameRect(&gx, &gy, &gw, &gh) {
@@ -917,8 +1142,10 @@ MainLoop() {
         }
         handsSeen := false, matchSeen := false, lobbySeen := false, errorDialogSeen := false
         startupPressSeen := false, loginScreenSeen := false
+        CheckCrashRecovery()
         return
     }
+    haveSeenHalloweenRunning := true
     if killerOn
         try DetectHands()   ; pixel-based, not OCR
     ; Monkey Finder goes first, every cycle - the lobby roster window is the most time-critical
@@ -962,11 +1189,12 @@ DetectStartupPress(gx, gy, gw, gh) {
             lastStartupErrLog := A_TickCount
         }
     }
-    if (found && !startupPressSeen) {
-        LogMsg("Startup splash screen detected -> Enter.")
-        SendGameKeyTimed("Enter")
+    if found {
+        if !startupPressSeen
+            startupPressSeen := ConfirmEnterDismissed(x1, y1, x2, y2, "PRESS", "Startup splash screen")
+    } else {
+        startupPressSeen := false
     }
-    startupPressSeen := found
 }
 
 ; title screen's "Login" button (with "Offline" beneath it) - Enter activates the highlighted
@@ -990,11 +1218,12 @@ DetectLoginScreen(gx, gy, gw, gh) {
             lastLoginErrLog := A_TickCount
         }
     }
-    if (found && !loginScreenSeen) {
-        LogMsg("Login screen detected -> Enter.")
-        SendGameKeyTimed("Enter")
+    if found {
+        if !loginScreenSeen
+            loginScreenSeen := ConfirmEnterDismissed(x1, y1, x2, y2, "LOGIN", "Login screen")
+    } else {
+        loginScreenSeen := false
     }
-    loginScreenSeen := found
 }
 
 ; "ERROR" / "NETWORK ERROR!" popups (account locked, connection timed out, etc) can show up at any
@@ -1020,11 +1249,12 @@ DetectErrorDialog(gx, gy, gw, gh) {
             lastErrorDialogErrLog := A_TickCount
         }
     }
-    if (found && !errorDialogSeen) {
-        LogMsg("Error dialog detected (" result.Text ") -> Enter to dismiss.")
-        SendGameKeyTimed("Enter")
+    if found {
+        if !errorDialogSeen
+            errorDialogSeen := ConfirmEnterDismissed(x1, y1, x2, y2, "ERROR", "Error dialog")
+    } else {
+        errorDialogSeen := false
     }
-    errorDialogSeen := found
 }
 
 ; pixel-color match instead of ImageSearch - full-image matching kept failing on this icon
@@ -1035,6 +1265,7 @@ DetectErrorDialog(gx, gy, gw, gh) {
 ; from WinGetClientPos turned out to be unreliable for an unfocused window.
 DetectHands() {
     global handsSeen, readyKey, abilityX, abilityY, abilityColor, abilityTolerance, killerPressCount
+    global killerSoundEnabled, killerSoundDelaySec
     if (abilityColor = "" || (abilityX = 0 && abilityY = 0))
         return
     found := false
@@ -1042,7 +1273,13 @@ DetectHands() {
     if (found && !handsSeen) {
         SendKeySpec(readyKey)
         killerPressCount++
+        try UpdateKillerHud()
         LogMsg("Ability pixel matched -> sent " PrettyKey(readyKey) ". (count: " killerPressCount ")")
+        ; one-shot, deferred - NOT a blocking Sleep() here, which would stall every other check
+        ; (Auto Queue, Monkey Finder) for the whole delay. PlayVoiceboardSequence takes no
+        ; parameters, so it's directly usable as a SetTimer callback.
+        if killerSoundEnabled
+            SetTimer(PlayVoiceboardSequence, -killerSoundDelaySec * 1000)
     }
     handsSeen := found
 }
@@ -1107,14 +1344,22 @@ OnPixelPick(*) {
 ; PERSONAL") unlike the lobby icon row, and OCR against a fractional box scales with any game
 ; resolution, where a pixel-exact ImageSearch crop only matches the resolution it was taken at.
 DetectMatchBar(gx, gy, gw, gh) {
-    global matchSeen, lastQueueAction, queueCooldownSec, lastMatchBarErrLog, lastMatchBarLog
+    global matchSeen, lastQueueAction, queueCooldownSec, lastMatchBarErrLog, lastMatchBarLog, matchBarConsecutive
     x1 := gx + gw * 0.2, y1 := gy
     x2 := gx + gw * 0.8, y2 := gy + gh * 0.25
     found := false
     try {
         result := OCR.FromRect(Round(x1), Round(y1), Round(x2 - x1), Round(y2 - y1), {scale: 3, grayscale: 1})
         clean := RegExReplace(StrUpper(result.Text), "[^A-Z]")
-        found := FuzzyContains(clean, "SUMMARY", 2)
+        ; single-keyword fuzzy "SUMMARY" false-fired mid-match - confirmed live, directly in a real
+        ; log: a kill-feed/HUD frame reading "...MARY T H 100%..." (the game has an NPC named "Mary
+        ; Thompson") matched within edit-distance 2, since "SUMMARY" literally ends in "MARY" - any
+        ; nearby name/text containing it is a near-miss by construction, not random noise, so a
+        ; consecutive-reads requirement alone doesn't help (the same false text sits on screen for many
+        ; consecutive polls too). Now requires a SECOND, independent keyword from the screen's own real
+        ; text ("SUMMARY / MATCH RESULTS / PERSONAL" per the comment above) before acting - two
+        ; unrelated short fuzzy matches landing in the same noisy HUD frame is far less likely than one.
+        found := FuzzyContains(clean, "SUMMARY", 1) && (FuzzyContains(clean, "RESULTS", 1) || FuzzyContains(clean, "PERSONAL", 2))
         if (A_TickCount - lastMatchBarLog > 4000) {
             LogMsg("Match bar OCR check: read '" result.Text "' -> " (found ? "PASS" : "fail"))
             lastMatchBarLog := A_TickCount
@@ -1130,8 +1375,10 @@ DetectMatchBar(gx, gy, gw, gh) {
     ; permanently blocked every future attempt for as long as the screen stayed on this exact menu
     ; - confirmed directly in a real log: it logged "still cooling down" exactly once, then sat on
     ; a screen reading PASS every single poll for over two minutes without ever trying again.
+    ; kept as defense-in-depth alongside the two-keyword requirement above.
     if found {
-        if !matchSeen {
+        matchBarConsecutive += 1
+        if (matchBarConsecutive >= 2 && !matchSeen) {
             remaining := queueCooldownSec * 1000 - (A_TickCount - lastQueueAction)
             if (remaining > 0) {
                 LogMsg("Match summary bar seen, but still cooling down (" Round(remaining / 1000, 1) "s left) - not acting yet.")
@@ -1141,6 +1388,7 @@ DetectMatchBar(gx, gy, gw, gh) {
             }
         }
     } else {
+        matchBarConsecutive := 0
         matchSeen := false
     }
 }
@@ -1242,6 +1490,248 @@ PressMatchmakeEnter(x1, y1, x2, y2) {
     }
     LogMsg("Matchmake menu still showing after " maxAttempts " Enter presses - will keep trying.")
     return false
+}
+
+; generic version of PressMatchmakeEnter's verify-and-retry pattern, for the three screens that
+; never got this treatment (startup splash, login, error dialogs) - confirmed live that all three
+; have the exact same latent bug: a single blind Enter press with no verification, latched
+; permanently "already handled" on the first sighting regardless of whether it actually worked.
+; Seen directly: the startup splash screen's "Press Enter" OCR read PASS continuously for minutes
+; with zero further Enter presses, since the one unverified attempt had already set the seen-flag.
+ConfirmEnterDismissed(x1, y1, x2, y2, keyword, label) {
+    maxAttempts := 3
+    Loop maxAttempts {
+        attempt := A_Index
+        SendGameKeyTimed("Enter")
+        LogMsg(label " detected -> Enter." (attempt > 1 ? " (retry " attempt ")" : ""))
+        Sleep(700)
+        stillThere := false
+        try {
+            result := OCR.FromRect(Round(x1), Round(y1), Round(x2 - x1), Round(y2 - y1), {scale: 3, grayscale: 1})
+            clean := RegExReplace(StrUpper(result.Text), "[^A-Z]")
+            stillThere := FuzzyContains(clean, keyword, 1)
+        } catch {
+            stillThere := false
+        }
+        if !stillThere
+            return true
+    }
+    LogMsg(label " still showing after " maxAttempts " Enter presses - will keep trying.")
+    return false
+}
+
+; ------------------------------------------------- crash recovery (Halloween.exe watchdog) ----
+; Chained via SetTimer(-delayMs) rather than Sleep() so this never blocks MainLoop for the ~20s this
+; whole sequence takes - same non-blocking pattern used for the killer-triggered sound delay.
+
+; Visenya's window runs ELEVATED (confirmed via process token check: TokenElevationType=1) while this
+; script runs unelevated (elevating the whole app breaks WebView2 rendering for the dashboard - already
+; established earlier in this project). Windows' UIPI silently drops synthetic mouse input from a
+; lower-integrity process aimed at a higher-integrity window - confirmed live: Click() fired with no
+; error, screenshot taken immediately after showed the status still stuck on "Idle", completely
+; unaffected. UAC is fully disabled on this machine (EnableLUA=0, confirmed via registry), so a *RunAs
+; elevation happens instantly with zero prompt - spin up the one-shot elevated click_helper.ahk instead
+; of elevating the whole app.
+ElevatedClick(x, y) {
+    try Run('*RunAs "' A_AhkPath '" "' A_ScriptDir '\click_helper.ahk" ' x ' ' y)
+}
+
+; chains multiple clicks inside ONE elevated process - confirmed live that two separate ElevatedClick()
+; calls a fixed delay apart raced against each other (Run('*RunAs ...')'s own elevation-broker latency
+; ate into the gap unpredictably), silently dropping one or both clicks. pts is a flat list [x1,y1,x2,y2,...].
+ElevatedClickSequence(pts*) {
+    args := ""
+    for v in pts
+        args .= " " v
+    try Run('*RunAs "' A_AhkPath '" "' A_ScriptDir '\click_helper.ahk"' args)
+}
+
+CheckCrashRecovery() {
+    global haveSeenHalloweenRunning, crashRecoveryInProgress, lastCrashRecoveryAttempt, TARGET_PROCESS
+    if (!haveSeenHalloweenRunning || crashRecoveryInProgress)
+        return
+    ; GetGameRect() failing only means no window was found RIGHT NOW - the process can legitimately be
+    ; alive with no window yet (its own intro cutscene/loading screen before the main window draws).
+    ; Confirmed live this was firing a false "crash recovery" cycle against a game that was still
+    ; genuinely starting up. Only actually missing process counts as crashed.
+    if ProcessExist(TARGET_PROCESS)
+        return
+    if (A_TickCount - lastCrashRecoveryAttempt < 20000)
+        return
+    lastCrashRecoveryAttempt := A_TickCount
+    crashRecoveryInProgress := true
+    LogMsg(TARGET_PROCESS " not found after previously running - starting crash recovery.")
+    CrashRecoveryWaitForExit(0)
+}
+
+; GetGameRect() failing (no window) doesn't mean the process has actually exited yet - confirmed live
+; that launching Visenya while Halloween.exe is still mid-shutdown makes Visenya think the game is
+; still open, so it shows its own "Please do not launch Visenya while the game is open" warning INSTEAD
+; of the normal Launch screen - the Launch-button click then lands on nothing useful and the whole
+; sequence silently fails to ever reach "Waiting for Halloween...". Poll ProcessExist directly (not
+; just the window) and give it a buffer afterward before touching Visenya at all.
+CrashRecoveryWaitForExit(attempt) {
+    global TARGET_PROCESS, crashRecoveryInProgress
+    if ProcessExist(TARGET_PROCESS) {
+        if (attempt >= 20) {
+            LogMsg("Crash recovery: " TARGET_PROCESS " still has a lingering process after 20s - will retry after cooldown.")
+            crashRecoveryInProgress := false
+            return
+        }
+        SetTimer(() => CrashRecoveryWaitForExit(attempt + 1), -1000)
+        return
+    }
+    SetTimer(CrashRecoveryLaunchVisenya, -3000)
+}
+
+CrashRecoveryLaunchVisenya() {
+    global VISENYA_LAUNCHER_DIR, crashRecoveryInProgress
+    ; the loader's filename has invisible characters spliced into it that don't round-trip reliably
+    ; through a hardcoded Chr()-built string (confirmed: FileExist() on the Chr(0x200B)-built path
+    ; returns false even though the real file exists) - a wildcard directory scan sidesteps that
+    ; entirely by letting the filesystem hand back the exact on-disk name.
+    launcherPath := ""
+    Loop Files, VISENYA_LAUNCHER_DIR "\Visenya*.exe" {
+        launcherPath := A_LoopFileFullPath
+        break
+    }
+    if (launcherPath = "") {
+        LogMsg("Crash recovery: couldn't find Visenya launcher exe in " VISENYA_LAUNCHER_DIR)
+        crashRecoveryInProgress := false
+        return
+    }
+    try {
+        ; explicit WorkingDir is load-bearing - confirmed live that without it, Visenya's elevated
+        ; child self-extracts its real payload into a "bin\<random>.exe" RELATIVE to the CALLER's
+        ; working directory (this script's own folder, since AUTOQ is launched with its own dir as
+        ; WorkingDirectory) instead of its own exe's folder. Found two stray payloads sitting in THIS
+        ; script's own "bin\" folder from earlier failed cycles - that misplaced instance still shows
+        ; a normal-looking "Idle" window but its clicks never actually do anything, which is why the
+        ; whole sequence kept silently failing even after the click-delivery mechanism itself was fixed.
+        Run('"' launcherPath '"', VISENYA_LAUNCHER_DIR)
+        LogMsg("Crash recovery: started Visenya launcher.")
+    } catch as e {
+        LogMsg("Crash recovery: failed to start Visenya launcher - " e.Message)
+        crashRecoveryInProgress := false
+        return
+    }
+    SetTimer(() => CrashRecoveryWaitForVisenyaReady(0), -1500)
+}
+
+; a fixed 2.5s delay before clicking anything was NOT enough - confirmed live that a cold-launched
+; Visenya window can still be rendering its welcome text when the click fires, so the click lands on a
+; not-yet-interactive window and does nothing (status stayed "Idle" the whole time). Poll for ANY
+; readable text in its status box first - same verify-before-act principle as everything else here.
+CrashRecoveryWaitForVisenyaReady(attempt) {
+    global VISENYA_STATUS_BOX, crashRecoveryInProgress
+    ready := false
+    try {
+        result := OCR.FromRect(VISENYA_STATUS_BOX.x1, VISENYA_STATUS_BOX.y1, VISENYA_STATUS_BOX.x2 - VISENYA_STATUS_BOX.x1, VISENYA_STATUS_BOX.y2 - VISENYA_STATUS_BOX.y1, {scale: 3, grayscale: 1})
+        ready := (Trim(result.Text) != "")
+    } catch {
+        ready := false
+    }
+    if ready {
+        SetTimer(CrashRecoveryClickLaunch, -300)
+        return
+    }
+    if (attempt >= 10) {
+        LogMsg("Crash recovery: Visenya window never became readable after 10s - clicking anyway.")
+        SetTimer(CrashRecoveryClickLaunch, -300)
+        return
+    }
+    SetTimer(() => CrashRecoveryWaitForVisenyaReady(attempt + 1), -1000)
+}
+
+; clicks the "update available, download now?" dialog's OK (user's standing instruction: always click
+; OK on it, harmless no-op if it isn't up) AND the Launch control, both inside one elevated process via
+; ElevatedClickSequence - see its comment for why two separate ElevatedClick() calls a fixed delay apart
+; is unreliable (confirmed live: raced and silently dropped the second click).
+CrashRecoveryClickLaunch() {
+    global VISENYA_OK_BTN, VISENYA_LAUNCH_BTN
+    ElevatedClickSequence(VISENYA_OK_BTN.x, VISENYA_OK_BTN.y, VISENYA_LAUNCH_BTN.x, VISENYA_LAUNCH_BTN.y)
+    LogMsg("Crash recovery: clicked Launch in Visenya.")
+    SetTimer(() => CrashRecoveryPollWaiting(0), -1500)
+}
+
+; a fixed delay before launching the game is NOT good enough - confirmed live (both windows visibly
+; open at once, user caught it directly) that the game can get launched before Visenya actually
+; reaches its ready state, which is exactly the condition that makes Visenya show its own "please
+; don't launch while the game is open" warning back at itself. Actually poll Visenya's status text via
+; OCR and only proceed once it genuinely reads "Waiting for Halloween...", same verify-before-proceed
+; principle as ConfirmEnterDismissed elsewhere in this script.
+; Also RE-CLICKS Launch every ~6s if still stuck - confirmed live that the click can silently fail to
+; register even with elevation/coordinates/timing all independently verified correct in isolation
+; (suspected contention between the elevated *RunAs dispatch and this script's own 150ms MainLoop/OCR
+; activity, never fully pinned down) - retrying is the same verify-and-retry principle that fixed every
+; other "single unverified action" bug in this script, applied here regardless of root cause.
+CrashRecoveryPollWaiting(attempt) {
+    global VISENYA_STATUS_BOX, VISENYA_LAUNCH_BTN, crashRecoveryInProgress
+    found := false
+    try {
+        result := OCR.FromRect(VISENYA_STATUS_BOX.x1, VISENYA_STATUS_BOX.y1, VISENYA_STATUS_BOX.x2 - VISENYA_STATUS_BOX.x1, VISENYA_STATUS_BOX.y2 - VISENYA_STATUS_BOX.y1, {scale: 3, grayscale: 1})
+        clean := RegExReplace(StrUpper(result.Text), "[^A-Z]")
+        found := FuzzyContains(clean, "WAITING", 1)
+    } catch {
+        found := false
+    }
+    if found {
+        LogMsg("Crash recovery: Visenya reports 'Waiting for Halloween...'")
+        SetTimer(CrashRecoveryStartGame, -300)
+        return
+    }
+    if (attempt >= 25) {
+        LogMsg("Crash recovery: Visenya never reached 'Waiting for Halloween...' after 25s - will retry after cooldown.")
+        crashRecoveryInProgress := false
+        return
+    }
+    if (attempt > 0 && Mod(attempt, 6) = 0) {
+        LogMsg("Crash recovery: still not waiting after " attempt "s - re-clicking Launch.")
+        ElevatedClick(VISENYA_LAUNCH_BTN.x, VISENYA_LAUNCH_BTN.y)
+    }
+    SetTimer(() => CrashRecoveryPollWaiting(attempt + 1), -1000)
+}
+
+CrashRecoveryStartGame() {
+    global STEAM_APP_ID
+    try Run("steam://rungameid/" STEAM_APP_ID)
+    LogMsg("Crash recovery: sent Steam launch for app " STEAM_APP_ID ".")
+    SetTimer(CrashRecoveryDismissRunningWarning, -8000)
+}
+
+; once the game is actually up, Visenya may show its own "Please do not launch Visenya while the
+; game is open. OK" warning (it doesn't know the game it just launched is now running) - confirmed
+; live this does NOT clear on its own, so dismiss it. UNLIKE the earlier update-dialog click, this one
+; is OCR-gated first - confirmed live that blind-clicking this coordinate when the dialog ISN'T up
+; lands on the live game underneath it and appears to crash/quit it, causing a runaway recovery loop.
+CrashRecoveryDismissRunningWarning() {
+    global VISENYA_OK_BTN, ERROR_DIALOG_BOX
+    if GetGameRect(&gx, &gy, &gw, &gh) {
+        x1 := gx + gw * ERROR_DIALOG_BOX.x1, y1 := gy + gh * ERROR_DIALOG_BOX.y1
+        x2 := gx + gw * ERROR_DIALOG_BOX.x2, y2 := gy + gh * ERROR_DIALOG_BOX.y2
+        found := false
+        try {
+            result := OCR.FromRect(Round(x1), Round(y1), Round(x2 - x1), Round(y2 - y1), {scale: 3, grayscale: 1})
+            clean := RegExReplace(StrUpper(result.Text), "[^A-Z]")
+            found := FuzzyContains(clean, "VISENYA", 1) || FuzzyContains(clean, "LAUNCH", 1)
+        } catch {
+            found := false
+        }
+        if found {
+            ElevatedClick(VISENYA_OK_BTN.x, VISENYA_OK_BTN.y)
+            LogMsg("Crash recovery: dismissed Visenya's 'already running' warning.")
+        }
+    }
+    SetTimer(CrashRecoveryVerify, -500)
+}
+
+CrashRecoveryVerify() {
+    global crashRecoveryInProgress, TARGET_PROCESS
+    if ProcessExist(TARGET_PROCESS)
+        LogMsg("Crash recovery: " TARGET_PROCESS " is back up.")
+    else
+        LogMsg("Crash recovery: " TARGET_PROCESS " still not running - will retry after cooldown.")
+    crashRecoveryInProgress := false
 }
 
 TestNow() {
@@ -1374,6 +1864,7 @@ CaptureNames() {
             if MonkeyFilterMatches(&matchedNames) {
                 LogMsg("Monkey Finder: filter matched among the 5 names - staying in this match.")
                 RecordMatchedNames(matchedNames)
+                try PlayVoiceboardSequence()
             } else {
                 LogMsg("Monkey Finder: no filter match among all 5 names - leaving and re-queuing.")
                 LeaveLobbyAndRequeue(gx, gy, gw, gh)

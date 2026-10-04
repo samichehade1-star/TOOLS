@@ -166,6 +166,22 @@
     </div>
   </div>
 
+  <div class="card">
+    <div class="icon">🔊</div>
+    <div class="info">
+      <div class="name">VOICE SOUNDBOARD</div>
+      <div class="desc">Plays sound(s) through mic on match entry</div>
+    </div>
+    <div class="ctrl">
+      <div class="ctrl-label">ACTIVATE</div>
+      <div class="toggle" id="tgVoice" onclick="toggleFeature('voice')"><div class="thumb"></div></div>
+    </div>
+    <div class="ctrl">
+      <div class="ctrl-label">SETTINGS</div>
+      <div class="gear" onclick="ahk.OpenVoiceboardSettings()">⚙</div>
+    </div>
+  </div>
+
   <div class="section-label" style="margin-bottom:0">ACTIVITY LOG</div>
   <div class="log-row">
     <div class="btn" onclick="ahk.OpenLogWindow()">VIEW LOG</div>
@@ -201,6 +217,7 @@ async function poll() {
     setToggle('tgQueue', s.queueOn);
     setToggle('tgKiller', s.killerOn);
     setToggle('tgMonkey', s.monkeyOn);
+    setToggle('tgVoice', s.voiceOn);
     document.getElementById('killerCount').textContent = s.killerCount;
     const startBtn = document.getElementById('startBtn');
     startBtn.textContent = s.running ? 'STOP' : 'START';
@@ -232,6 +249,7 @@ function toggleFeature(which) {
   if (which === 'queue') ahk.SetQueue(newVal);
   if (which === 'killer') ahk.SetKiller(newVal);
   if (which === 'monkey') ahk.SetMonkey(newVal);
+  if (which === 'voice') ahk.SetVoice(newVal);
   setToggle(el.id, newVal);
 }
 
