@@ -4,6 +4,21 @@
 #Include lib\WebView2\WebView2.ahk
 Persistent
 
+; any unhandled exception anywhere (a timer callback, OCR.ahk's own internals, anything) otherwise
+; pops AHK's default blocking error dialog and freezes the ENTIRE script - every timer, the dashboard,
+; Killer's ability auto-press, all of it - until someone notices and dismisses it by hand. Confirmed
+; live: a GC-time crash deep in OCR.ahk's own destructor (OCR.Base.__Delete throwing on a partially-
+; constructed object with no "ptr" property - not this script's own code) sat blocking everything,
+; unnoticed, mid-match, for an unknown stretch of time, found only because the user happened to look
+; at the screen. Logging and suppressing instead of showing the dialog means a future error of this
+; kind - wherever it comes from - drops that one call and the script keeps running, instead of
+; silently going completely dark.
+OnError(GlobalErrorHandler)
+GlobalErrorHandler(err, mode) {
+    try LogMsg("UNHANDLED ERROR (" mode "): " err.Message " (" err.What ", line " err.Line ") - suppressed, continuing.")
+    return 1
+}
+
 ; NOTE: this used to force-elevate (run as admin) as a precaution against Halloween.exe possibly
 ; running elevated and UIPI blocking input into it. Removed because admin elevation breaks WebView2
 ; rendering entirely (Chromium's sandboxed renderer can't draw into a higher-integrity parent
@@ -25,13 +40,14 @@ TARGET_PROCESS := "Halloween.exe"
 
 ; bump this on every release pushed to UPDATE_REPO - CheckForUpdateOnce() compares it against the
 ; latest GitHub release tag there to decide whether to show the update prompt.
-APP_VERSION := "1.3.0"
+APP_VERSION := "1.4.0"
 UPDATE_REPO := "samichehade1-star/sami-auto-queue"
 UPDATE_ASSET_NAME := "SAMIAutoQueue.zip"
 
 SETTINGS_INI := A_ScriptDir "\autoqueue_settings.ini"
 MATCHED_NAMES_FILE := A_ScriptDir "\matched_names.txt"
 PERSISTENT_LOG_FILE := A_ScriptDir "\activity_log.txt"
+SESSIONS_FILE := A_ScriptDir "\sessions.txt"
 
 DARK_BG   := "0A0A0C"
 DARK_EDIT := "151518"
@@ -78,6 +94,10 @@ global queueCooldownSec := IniRead(SETTINGS_INI, "settings", "queuecooldown", "1
 global lastQueueAction := 0
 
 global monkeyFilters := IniRead(SETTINGS_INI, "settings", "monkeyfilters", "")
+; when on, Monkey Finder still captures/logs the 5 names and evaluates the filter every lobby, same
+; as always, but skips the actual LeaveLobbyAndRequeue() call on a no-match - lets the user watch/log
+; who's in queue against their filters without the disruptive side effect of leaving matches.
+global monkeyTrackOnly := (IniRead(SETTINGS_INI, "settings", "monkeytrackonly", "0") = "1")
 global lastCapturedNames := ["", "", "", "", ""]
 global pendingNames := ["", "", "", "", ""]
 global pendingCounts := [0, 0, 0, 0, 0]
@@ -125,6 +145,29 @@ if FileExist(MATCHED_NAMES_FILE) {
             matchedNamesSeen[line] := true
     }
 }
+; session history - persists across restarts (unlike killerPressCount, which is deliberately
+; in-memory-only) so the Sessions window can show every past run's duration, killer press count, and
+; which filter-matched names were seen during it, even long after the app's been closed and reopened.
+; File format: one line per session, pipe-delimited: start|end|killerCount|name1;name2;name3 (both
+; start/end are A_Now-style yyyyMMddHHmmss so DateDiff can compute duration directly).
+global allSessions := []
+global currentSessionIndex := 0
+global currentSessionNames := Map()  ; filter-matched names for just THIS session, not all-time
+if FileExist(SESSIONS_FILE) {
+    for line in StrSplit(FileRead(SESSIONS_FILE, "UTF-8"), "`n", "`r") {
+        line := Trim(line)
+        if (line = "")
+            continue
+        parts := StrSplit(line, "|")
+        if (parts.Length < 3)
+            continue
+        nameList := (parts.Length >= 4 && parts[4] != "") ? StrSplit(parts[4], ";") : []
+        allSessions.Push({start: parts[1], end: parts[2], killerCount: parts[3] + 0, names: nameList})
+    }
+}
+allSessions.Push({start: A_Now, end: A_Now, killerCount: 0, names: []})
+currentSessionIndex := allSessions.Length
+
 global handsSeen := false, matchSeen := false, lobbySeen := false, errorDialogSeen := false
 global matchBarConsecutive := 0
 global lastErrorDialogErrLog := 0, lastErrorDialogLog := 0
@@ -149,6 +192,7 @@ global lastLobbyErrLog := 0, lastLobbyLog := 0
 global haveSeenHalloweenRunning := false
 global crashRecoveryInProgress := false
 global lastCrashRecoveryAttempt := 0
+global watchStartedAt := 0
 VISENYA_LAUNCHER_DIR := "C:\Users\Sami1\Desktop\Hax\Halloween"
 VISENYA_OK_BTN := {x: 1036, y: 602}       ; "update available" confirmation dialog's OK button
 VISENYA_LAUNCH_BTN := {x: 1158, y: 698}   ; the loader's own "> Launch" control
@@ -172,6 +216,7 @@ global soundHkCtrls, soundDelayCtrls
 global streamerCheckbox
 global killerSoundCheckbox, killerSoundDelayEdit
 global logGui := 0, logEditCtl := 0
+global sessionsGui := 0, sessionsLV := 0, sessionsRowToIndex := Map()
 global updateAvailable := false, updateVersionStr := "", updateDownloadUrl := ""
 global dragActive := false, dragStartMouseX := 0, dragStartMouseY := 0, dragStartWinX := 0, dragStartWinY := 0
 
@@ -213,6 +258,7 @@ try {
         OpenVoiceboardSettings: OpenVoiceboardSettings,
         TestNow: TestNow,
         OpenLogWindow: OpenLogWindow,
+        OpenSessionsWindow: OpenSessionsWindow,
         StartDrag: StartDragMainWindow,
         MinimizeWindow: MinimizeMainWindow,
         CloseWindow: CloseMainWindow,
@@ -245,12 +291,19 @@ SetTimer(MainLoop, 150)
 SetTimer(UpdateActiveUserWindow, 300)
 SetTimer(RefreshLogWindow, 500)
 SetTimer(CheckForUpdateOnce, -3000)  ; one-shot, after the dashboard has had time to come up
+; periodic save, not just on-exit, so a crash/force-kill (which this whole project has seen plenty
+; of, e.g. the game itself getting force-closed) doesn't lose the running session's duration/killer
+; count/tracked names entirely - worst case loses the last 60s of it instead of all of it.
+SetTimer(SaveSessions, 60000)
+OnExit((*) => SaveSessions())
 
 ; START/STOP is a separate master gate from which features are selected - toggling a feature just
 ; changes which one Will run once started; START/STOP changes whether anything runs at all.
 ToggleAllFeatures(*) {
-    global masterRunning
+    global masterRunning, watchStartedAt
     masterRunning := !masterRunning
+    if masterRunning
+        watchStartedAt := A_TickCount
     LogMsg(masterRunning ? "Started watching." : "Stopped.")
 }
 
@@ -292,7 +345,10 @@ EnsureKillerHud() {
     global killerHudGui, killerHudTxt
     if killerHudGui
         return
-    killerHudGui := Gui("-Caption +Border +AlwaysOnTop +ToolWindow +E0x20", "SAMI - Killer HUD")
+    ; NOT +ToolWindow - confirmed live that tool windows get filtered out of OBS's (and most other
+    ; capture apps') window picker entirely, so the HUD never even appeared as a selectable source.
+    ; The tradeoff is a taskbar/alt-tab entry for the HUD, which is a fair price for being capturable.
+    killerHudGui := Gui("-Caption +Border +AlwaysOnTop +E0x20", "SAMI - Killer HUD")
     ; +E0x20 = WS_EX_TRANSPARENT (click-through - never intercepts mouse input over the game)
     killerHudGui.BackColor := "0A0A0C"
     killerHudGui.MarginX := 12
@@ -538,6 +594,108 @@ RefreshLogWindow() {
     try logEditCtl.Value := activityLog
 }
 
+; lists every session ever run (including past app launches, not just this one) with its duration and
+; killer press count (the raw ability-press count, NOT the x4 "Monkeys Killed" HUD display value), plus
+; lets the user export just the filter-matched names seen during any one selected session. Rebuilds the
+; list fresh each open (via SaveSessions()) so the current, still-running session shows live numbers.
+OpenSessionsWindow(*) {
+    global mainGui, DARK_BG, DARK_EDIT, DARK_TEXT, DARK_DIM, ACCENT, allSessions, sessionsLV, sessionsRowToIndex, sessionsGui
+    SaveSessions()
+    ; sessionsGui MUST be global (not a local var) - confirmed live that a local Gui object with no
+    ; remaining reference anywhere gets garbage-collected the moment this function returns, destroying
+    ; the window itself seconds after it opened. Same reason logGui/killerHudGui are globals.
+    if (sessionsGui) {
+        sessionsGui.Destroy()
+        sessionsGui := 0
+    }
+    sessionsGui := Gui("-Caption +Border +AlwaysOnTop +Owner" mainGui.Hwnd, "SAMI - Sessions")
+    sessionsGui.BackColor := DARK_BG
+    DllCall("user32\SetWindowDisplayAffinity", "ptr", sessionsGui.Hwnd, "uint", 0x11)  ; WDA_EXCLUDEFROMCAPTURE
+    SetDarkTitleBar(sessionsGui.Hwnd)
+    sessionsGui.MarginX := 10
+    sessionsGui.MarginY := 10
+    sessionsGui.OnEvent("Escape", (*) => sessionsGui.Hide())
+    sessionsGui.OnEvent("Close", (*) => sessionsGui.Hide())
+
+    sessionsGui.SetFont("s10 bold c" ACCENT, "Segoe UI")
+    sessionsGui.AddText("w560 Center", "SESSION HISTORY")
+
+    sessionsGui.SetFont("s9 c" DARK_TEXT, "Segoe UI")
+    sessionsLV := sessionsGui.AddListView("w560 h320 y+8 Background" DARK_EDIT " c" DARK_TEXT, ["Started", "Duration", "Killer Count", "Names Tracked"])
+    sessionsLV.Opt("+Grid")
+
+    sessionsRowToIndex := Map()
+    row := 0
+    Loop allSessions.Length {
+        i := allSessions.Length - A_Index + 1  ; most recent first
+        s := allSessions[i]
+        row += 1
+        sessionsLV.Add(, FormatSessionStart(s.start), FormatDuration(s.start, s.end), String(s.killerCount), String(s.names.Length))
+        sessionsRowToIndex[row] := i
+    }
+    Loop 4
+        sessionsLV.ModifyCol(A_Index, "AutoHdr")
+
+    sessionsGui.SetFont("s9 norm c" DARK_TEXT, "Segoe UI")
+    exportBtn := sessionsGui.AddButton("w272 y+8", "Export selected session's names")
+    exportBtn.OnEvent("Click", (*) => ExportSessionNames())
+    closeBtn := sessionsGui.AddButton("x+16 yp w272", "Close")
+    closeBtn.OnEvent("Click", (*) => sessionsGui.Hide())
+
+    sessionsGui.Show()
+}
+
+FormatSessionStart(s) {
+    try return FormatTime(s, "yyyy-MM-dd HH:mm")
+    catch
+        return s
+}
+
+FormatDuration(startStr, endStr) {
+    try {
+        secs := DateDiff(endStr, startStr, "Seconds")
+        if (secs < 0)
+            secs := 0
+        h := secs // 3600
+        m := Mod(secs, 3600) // 60
+        if (h > 0)
+            return h "h " m "m"
+        return m "m " Mod(secs, 60) "s"
+    } catch {
+        return "?"
+    }
+}
+
+ExportSessionNames() {
+    global sessionsLV, sessionsRowToIndex, allSessions
+    selRow := sessionsLV.GetNext()
+    if !selRow {
+        MsgBox("Select a session first.", "SAMI - Auto Queue", "Icon!")
+        return
+    }
+    s := allSessions[sessionsRowToIndex[selRow]]
+    if (s.names.Length = 0) {
+        MsgBox("This session has no tracked names to export.", "SAMI - Auto Queue", "Icon!")
+        return
+    }
+    defaultName := "session_" RegExReplace(s.start, "[^0-9]", "") "_names.txt"
+    savePath := FileSelect("S16", defaultName, "Export session names", "Text files (*.txt)")
+    if (savePath = "")
+        return
+    if !InStr(savePath, ".")
+        savePath .= ".txt"
+    try {
+        out := ""
+        for nm in s.names
+            out .= nm "`r`n"
+        FileDelete(savePath)
+        FileAppend(out, savePath, "UTF-8")
+        LogMsg("Exported " s.names.Length " name(s) from session starting " FormatSessionStart(s.start) " to " savePath ".")
+    } catch as e {
+        MsgBox("Export failed: " e.Message, "SAMI - Auto Queue", "Icon!")
+    }
+}
+
 ; ------------------------------------------------------------ feature toggles ----
 SetQueueOn(v) {
     global queueOn, SETTINGS_INI, matchSeen, lobbySeen
@@ -728,8 +886,8 @@ SaveTolerance() {
 }
 
 OpenMonkeySettings(*) {
-    global mainGui, DARK_BG, DARK_EDIT, DARK_TEXT, DARK_DIM, ACCENT, monkeyFilters, lobbyIdleTimeoutSec
-    global filterEdit, wmNameTxt, wmLogEdit, idleTimeoutEdit
+    global mainGui, DARK_BG, DARK_EDIT, DARK_TEXT, DARK_DIM, ACCENT, monkeyFilters, lobbyIdleTimeoutSec, monkeyTrackOnly
+    global filterEdit, wmNameTxt, wmLogEdit, idleTimeoutEdit, monkeyTrackOnlyCheckbox
     g := Gui("+AlwaysOnTop +Owner" mainGui.Hwnd, "MONKEY FINDER - settings")
     g.BackColor := DARK_BG
     SetDarkTitleBar(g.Hwnd)
@@ -746,6 +904,11 @@ OpenMonkeySettings(*) {
     saveFilterBtn.OnEvent("Click", (*) => SaveMonkeyFilters())
     exportNamesBtn := g.AddButton("x+8 yp w200", "Export matched names")
     exportNamesBtn.OnEvent("Click", (*) => ExportMatchedNames())
+
+    g.SetFont("s8 c" DARK_DIM, "Segoe UI")
+    monkeyTrackOnlyCheckbox := g.AddCheckbox("xm y+10 w400 c" DARK_TEXT, "Track and log names only - never leave a match on no filter match")
+    monkeyTrackOnlyCheckbox.Value := monkeyTrackOnly
+    monkeyTrackOnlyCheckbox.OnEvent("Click", (*) => SaveMonkeyTrackOnly())
 
     g.SetFont("s9 bold c" ACCENT, "Segoe UI")
     g.AddText("xm y+16 w400", "LOBBY IDLE TIMEOUT (seconds)")
@@ -775,6 +938,13 @@ SaveMonkeyFilters() {
     monkeyFilters := Trim(filterEdit.Value)
     IniWrite(monkeyFilters, SETTINGS_INI, "settings", "monkeyfilters")
     LogMsg("Monkey Finder filters set to: " (monkeyFilters = "" ? "(none - won't auto-leave)" : monkeyFilters))
+}
+
+SaveMonkeyTrackOnly() {
+    global monkeyTrackOnlyCheckbox, monkeyTrackOnly, SETTINGS_INI
+    monkeyTrackOnly := monkeyTrackOnlyCheckbox.Value
+    IniWrite(monkeyTrackOnly ? 1 : 0, SETTINGS_INI, "settings", "monkeytrackonly")
+    LogMsg("Monkey Finder track-only mode: " (monkeyTrackOnly ? "on (will never leave on no match)." : "off."))
 }
 
 ExportMatchedNames() {
@@ -1532,8 +1702,24 @@ ConfirmEnterDismissed(x1, y1, x2, y2, keyword, label) {
 ; unaffected. UAC is fully disabled on this machine (EnableLUA=0, confirmed via registry), so a *RunAs
 ; elevation happens instantly with zero prompt - spin up the one-shot elevated click_helper.ahk instead
 ; of elevating the whole app.
+; A_AhkPath is NOT safe to use here - confirmed live, directly: in a COMPILED exe, A_AhkPath returns
+; the path to the COMPILED EXE ITSELF, not the AutoHotkey interpreter. Every ElevatedClick() call was
+; therefore launching a brand new ELEVATED instance of "SAMI Auto Queue.exe" (passing click_helper.ahk
+; and coordinates as nonsense command-line args it ignores) - and since #SingleInstance Force is set,
+; that new instance immediately killed the running one. This was the actual cause of the app appearing
+; to "restart completely" every time crash recovery tried to click something; invisible during dev
+; testing because that always ran via the interpreter directly, where A_AhkPath resolves correctly.
+GetAhkInterpreterPath() {
+    if !A_IsCompiled
+        return A_AhkPath
+    for p in ["C:\Program Files\AutoHotkey\v2\AutoHotkey64.exe", "C:\Program Files\AutoHotkey\v2\AutoHotkey32.exe", "C:\Program Files (x86)\AutoHotkey\v2\AutoHotkey32.exe"]
+        if FileExist(p)
+            return p
+    throw Error("Could not locate the AutoHotkey v2 interpreter - checked common install paths.")
+}
+
 ElevatedClick(x, y) {
-    try Run('*RunAs "' A_AhkPath '" "' A_ScriptDir '\click_helper.ahk" ' x ' ' y)
+    try Run('*RunAs "' GetAhkInterpreterPath() '" "' A_ScriptDir '\click_helper.ahk" ' x ' ' y)
 }
 
 ; chains multiple clicks inside ONE elevated process - confirmed live that two separate ElevatedClick()
@@ -1543,12 +1729,22 @@ ElevatedClickSequence(pts*) {
     args := ""
     for v in pts
         args .= " " v
-    try Run('*RunAs "' A_AhkPath '" "' A_ScriptDir '\click_helper.ahk"' args)
+    try Run('*RunAs "' GetAhkInterpreterPath() '" "' A_ScriptDir '\click_helper.ahk"' args)
 }
 
 CheckCrashRecovery() {
-    global haveSeenHalloweenRunning, crashRecoveryInProgress, lastCrashRecoveryAttempt, TARGET_PROCESS
-    if (!haveSeenHalloweenRunning || crashRecoveryInProgress)
+    global haveSeenHalloweenRunning, crashRecoveryInProgress, lastCrashRecoveryAttempt, TARGET_PROCESS, watchStartedAt
+    ; originally gated on haveSeenHalloweenRunning alone (only recover from a crash mid-session, never
+    ; on a cold start) - but that meant starting AUTOQ while the game was ALREADY down never armed
+    ; recovery at all, even though "bring the game back" is exactly what's wanted in that case too.
+    ; Confirmed live: user started watching with the game already closed, it sat logging "isn't
+    ; running - standing by" indefinitely since haveSeenHalloweenRunning never had a chance to become
+    ; true. Now also triggers after a grace period of watching with no window ever seen, so a normal
+    ; "game takes a few seconds to appear after Start" doesn't false-trigger, but a `the game simply
+    ; isn't running` case does.
+    if (!haveSeenHalloweenRunning && (watchStartedAt = 0 || A_TickCount - watchStartedAt < 30000))
+        return
+    if crashRecoveryInProgress
         return
     ; GetGameRect() failing only means no window was found RIGHT NOW - the process can legitimately be
     ; alive with no window yet (its own intro cutscene/loading screen before the main window draws).
@@ -1772,7 +1968,7 @@ TestOcrBox(name, x1, y1, x2, y2, keyword) {
 ; --------------------------------------------------------- monkey finder ----
 CaptureNames() {
     global lastCapturedNames, pendingNames, pendingCounts, wmNameTxt, wmLogEdit, NAME_BOXES, LOBBY_HEADER_BOX, monkeyDecided
-    global lobbyFirstSeenAt, lobbyIdleTimeoutSec
+    global lobbyFirstSeenAt, lobbyIdleTimeoutSec, monkeyTrackOnly
     if !GetGameRect(&gx, &gy, &gw, &gh)
         return
     ; gate: only trust the name boxes on the actual lobby screen - confirm the "LOBBY" header is present
@@ -1865,6 +2061,8 @@ CaptureNames() {
                 LogMsg("Monkey Finder: filter matched among the 5 names - staying in this match.")
                 RecordMatchedNames(matchedNames)
                 try PlayVoiceboardSequence()
+            } else if monkeyTrackOnly {
+                LogMsg("Monkey Finder: no filter match among all 5 names - track-only mode, not leaving.")
             } else {
                 LogMsg("Monkey Finder: no filter match among all 5 names - leaving and re-queuing.")
                 LeaveLobbyAndRequeue(gx, gy, gw, gh)
@@ -1992,13 +2190,38 @@ MonkeyFilterMatches(&matchedOut := "") {
 
 ; appends any genuinely new matched names to the cumulative on-disk list (MATCHED_NAMES_FILE),
 ; skipping ones already recorded in a previous match/session - this is what "Export matched names"
-; in the Monkey Finder settings reads from.
+; in the Monkey Finder settings reads from. Also tracks into currentSessionNames/allSessions, scoped
+; to just this session, for the Sessions window's per-session export.
 RecordMatchedNames(names) {
-    global matchedNamesSeen, MATCHED_NAMES_FILE
+    global matchedNamesSeen, MATCHED_NAMES_FILE, currentSessionNames, allSessions, currentSessionIndex
     for nm in names {
         if !matchedNamesSeen.Has(nm) {
             matchedNamesSeen[nm] := true
             try FileAppend(nm "`r`n", MATCHED_NAMES_FILE, "UTF-8")
         }
+        if !currentSessionNames.Has(nm) {
+            currentSessionNames[nm] := true
+            allSessions[currentSessionIndex].names.Push(nm)
+        }
     }
+}
+
+; rewrites SESSIONS_FILE from allSessions, refreshing the current (still-running) session's end time
+; and killer press count first - called periodically (crash-safety) and on clean exit.
+SaveSessions() {
+    global allSessions, currentSessionIndex, killerPressCount, SESSIONS_FILE
+    allSessions[currentSessionIndex].end := A_Now
+    allSessions[currentSessionIndex].killerCount := killerPressCount
+    out := ""
+    for s in allSessions
+        out .= s.start "|" s.end "|" s.killerCount "|" StrJoin(s.names, ";") "`n"
+    try FileDelete(SESSIONS_FILE)
+    try FileAppend(out, SESSIONS_FILE, "UTF-8")
+}
+
+StrJoin(arr, delim) {
+    out := ""
+    for i, v in arr
+        out .= (i > 1 ? delim : "") v
+    return out
 }

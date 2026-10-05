@@ -128,6 +128,13 @@ class OCR {
     class IBase {
         __OCR := OCR
         __New(ptr?) {
+            ; define ptr FIRST, before anything below that can throw - confirmed live that a null ptr
+            ; (the !ptr branch) threw before this ever ran, leaving the object with no "ptr" property
+            ; at all. __Delete() still runs on that partially-constructed object during garbage
+            ; collection (unrelated in time to the original throw) and crashes trying to read a
+            ; property that was never defined. Defining it upfront as 0 means __Delete's `this.ptr ?
+            ; ObjRelease(this.ptr) : 0` safely no-ops instead, regardless of how construction fails.
+            this.DefineProp("ptr", {Value: 0})
             if IsSet(ptr) {
                 if !ptr
                     throw ValueError('Invalid IUnknown interface pointer', -2, this.__Class)
