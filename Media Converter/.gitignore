@@ -1,0 +1,6 @@
+build/
+dist/
+release/
+__pycache__/
+ffmpeg.exe
+*.pyc
