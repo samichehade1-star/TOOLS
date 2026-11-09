@@ -2,7 +2,7 @@
 
 <img src="assets/icon.png" width="64">
 
-[![Download for Windows](https://img.shields.io/badge/Download%20for%20Windows-6366f1?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/samichehade1-star/media-converter/releases/latest/download/MediaConverter_Setup.zip)
+[![Download for Windows](https://img.shields.io/badge/Download%20for%20Windows-6366f1?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/samichehade1-star/media-converter/releases/latest/download/MediaConverter_Setup.exe)
 
 Paste a link and save it as MP3, MP4 and more - the whole thing or just a part. Convert files on your PC between formats, or play a file and cut a part out of it.
 
@@ -14,7 +14,7 @@ Use it only for content you own or have permission to download.
 
 ## Installing
 
-Click **Download for Windows** above (or get `MediaConverter_Setup.zip` from the [latest release](https://github.com/samichehade1-star/media-converter/releases/latest)), unzip it anywhere and run `Media Converter.exe`. Keep `ffmpeg.exe` in the same folder.
+Click **Download for Windows** above and run `MediaConverter_Setup.exe`. It installs for your Windows user only (no admin prompt) into `%LOCALAPPDATA%\Programs\Media Converter`, adds Start menu and desktop shortcuts, and can be removed from Windows Settings > Apps like any other app. Everything is included (ffmpeg too).
 
 Windows SmartScreen may show an "unrecognized publisher" warning on first run since the app isn't code-signed - click **More info -> Run anyway**. Needs the Microsoft Edge WebView2 runtime (built into Windows 11).
 
@@ -29,7 +29,7 @@ Settings (the save folder) are in `%APPDATA%\MediaConverter\settings.json`.
 
 1. Raise `APP_VERSION` at the top of `media_converter.py`.
 2. Put `ffmpeg.exe` next to `build.bat` (not committed - see `.gitignore`), then run `build.bat`.
-3. Create a release on `samichehade1-star/media-converter` tagged `v<APP_VERSION>` and attach both files from `release\`: `MediaConverter.zip` (the update) and `MediaConverter_Setup.zip` (first install, includes ffmpeg).
+3. Create a release on `samichehade1-star/media-converter` tagged `v<APP_VERSION>` and attach both files from `release\`: `MediaConverter.zip` (the in-app update) and `MediaConverter_Setup.exe` (the installer the download button points to). `build.bat` needs [Inno Setup 6](https://jrsoftware.org/isinfo.php) for the installer.
 
 Run from source: `pip install -r requirements.txt`, then `python media_converter.py` (ffmpeg on PATH or next to the script).
 
